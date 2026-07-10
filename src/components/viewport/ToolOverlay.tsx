@@ -1,0 +1,112 @@
+import { useState } from 'react'
+import { Html, Line } from '@react-three/drei'
+import { MM_TO_M } from '../../lib/geometry'
+import { distance, panelCorners, type Point } from '../../lib/corners'
+import { formatMeasurement } from '../../lib/units'
+import { useDesignStore } from '../../store/designStore'
+
+const toM = ([x, y, z]: Point): Point => [x * MM_TO_M, y * MM_TO_M, z * MM_TO_M]
+const round = (p: Point): Point => [Math.round(p[0]), Math.round(p[1]), Math.round(p[2])]
+
+const HIT_RADIUS = 0.01 // invisible click target (m)
+const DOT_RADIUS = 0.004 // visible dot on hover / selection (m)
+
+/**
+ * Corner-based tools:
+ *  - `snap`: pick a corner on one panel, then a corner on another; the first
+ *    panel translates so the corners coincide.
+ *  - `measure`: pick two corners; a line + distance label persist until the
+ *    next measurement.
+ * Corners are invisible until hovered; the first pick stays highlighted.
+ */
+export function ToolOverlay() {
+  const tool = useDesignStore((s) => s.tool)
+  const panels = useDesignStore((s) => s.panels)
+  const unit = useDesignStore((s) => s.unit)
+  const updatePanel = useDesignStore((s) => s.updatePanel)
+  const pick = useDesignStore((s) => s.toolPick)
+  const setToolPick = useDesignStore((s) => s.setToolPick)
+  const measurement = useDesignStore((s) => s.measurement)
+  const setMeasurement = useDesignStore((s) => s.setMeasurement)
+
+  const [hovered, setHovered] = useState<string | null>(null)
+
+  if (tool === 'move') return null
+
+  const handleCorner = (panelId: string, index: number, point: Point) => {
+    if (!pick) {
+      setToolPick({ panelId, index, point })
+      if (tool === 'measure') setMeasurement(null)
+      return
+    }
+    if (tool === 'snap') {
+      const panel = panels.find((p) => p.id === pick.panelId)
+      if (panel) {
+        updatePanel(panel.id, {
+          position: round([
+            panel.position[0] + (point[0] - pick.point[0]),
+            panel.position[1] + (point[1] - pick.point[1]),
+            panel.position[2] + (point[2] - pick.point[2]),
+          ]),
+        })
+      }
+    } else {
+      setMeasurement({ a: pick.point, b: point })
+    }
+    setToolPick(null)
+  }
+
+  return (
+    <>
+      {panels.flatMap((panel) =>
+        panelCorners(panel).map((corner, i) => {
+          const key = `${panel.id}:${i}`
+          const selected = pick?.panelId === panel.id && pick.index === i
+          const active = selected || hovered === key
+          return (
+            <group key={key} position={toM(corner)}>
+              <mesh
+                onPointerOver={(e) => {
+                  e.stopPropagation()
+                  setHovered(key)
+                }}
+                onPointerOut={() => setHovered((h) => (h === key ? null : h))}
+                onClick={(e) => {
+                  e.stopPropagation()
+                  handleCorner(panel.id, i, corner)
+                }}
+              >
+                <sphereGeometry args={[HIT_RADIUS, 8, 8]} />
+                <meshBasicMaterial transparent opacity={0} depthWrite={false} />
+              </mesh>
+              {active && (
+                <mesh>
+                  <sphereGeometry args={[DOT_RADIUS, 16, 16]} />
+                  <meshBasicMaterial color={selected ? '#2a6cff' : '#ffffff'} depthTest={false} />
+                </mesh>
+              )}
+            </group>
+          )
+        }),
+      )}
+
+      {measurement && (
+        <>
+          <Line points={[toM(measurement.a), toM(measurement.b)]} color="#2a6cff" lineWidth={2} />
+          <Html
+            position={toM([
+              (measurement.a[0] + measurement.b[0]) / 2,
+              (measurement.a[1] + measurement.b[1]) / 2,
+              (measurement.a[2] + measurement.b[2]) / 2,
+            ])}
+            center
+          >
+            <span className="measure-label">
+              {formatMeasurement(distance(measurement.a, measurement.b), unit)}
+            </span>
+          </Html>
+        </>
+      )}
+    </>
+  )
+}
