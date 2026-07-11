@@ -68,6 +68,104 @@ export function parseMeasurement(raw: string, defaultUnit: Unit): number | null 
   return value === null ? null : value * mmPerUnit
 }
 
+/** Result of evaluating a field's text: the value in mm, plus the display unit
+ *  it should adopt (only a plain single measurement adopts a typed unit; an
+ *  arithmetic expression keeps the box's current unit). */
+export interface EvalResult {
+  mm: number
+  explicitUnit: Unit | null
+}
+
+/**
+ * Evaluate a measurement field's text, supporting simple arithmetic on top of
+ * {@link parseMeasurement}. Operators (`+ - * /`) need no surrounding spaces —
+ * they're auto-padded, while fractions (`3/4`), mixed numbers (`23 3/4`) and
+ * negative literals (`-17`) are left intact:
+ *
+ *   `30+15+2-3`        → 44 (in the box's unit)
+ *   `+3`               → current value + 3
+ *   `600/2`            → 300      (`*` / `/` take a plain scalar)
+ *   `23 3/4 + 1/2 in`  → mixed units, result kept in the box's unit
+ *
+ * Evaluation is strictly left to right (no precedence) — a field calculator,
+ * not a full expression engine. Returns `null` if anything fails to parse.
+ */
+export function evaluateMeasurement(raw: string, currentMm: number, defaultUnit: Unit): EvalResult | null {
+  const text = raw.trim()
+  if (!text) return null
+
+  const isOp = (t: string) => t === '+' || t === '-' || t === '*' || t === '/'
+
+  // Make spaces optional around operators. `+` and `*` never appear inside a
+  // number, so pad them freely. A `-` is only an operator when it directly
+  // follows a value (digit / inch-mark / `)`); a leading or post-operator `-`
+  // stays the sign of a negative literal. `/` is left alone — bare `3/4` is a
+  // fraction (and `600/2` reads the same either way).
+  const padded = text
+    .replace(/^\//, '/ ') // leading `/` is a relative divide (`/2` halves)
+    .replace(/([+*])/g, ' $1 ')
+    .replace(/([\d"')])\s*-\s*/g, '$1 - ')
+
+  // Split on whitespace, then regroup consecutive value tokens into single
+  // terms so a mixed fraction like "23 3/4" survives as one operand.
+  const seq: ({ op: string } | { term: string })[] = []
+  let buffer: string[] = []
+  const flush = () => {
+    if (buffer.length) {
+      seq.push({ term: buffer.join(' ') })
+      buffer = []
+    }
+  }
+  for (const token of padded.split(/\s+/).filter(Boolean)) {
+    if (isOp(token)) {
+      flush()
+      seq.push({ op: token })
+    } else {
+      buffer.push(token)
+    }
+  }
+  flush()
+
+  // No operators: a plain measurement — keep the existing unit-aware behaviour,
+  // including adopting an explicitly typed unit.
+  if (!seq.some((s) => 'op' in s)) {
+    const mm = parseMeasurement(text, defaultUnit)
+    return mm === null ? null : { mm, explicitUnit: detectDisplayUnit(text) }
+  }
+
+  // Expression: fold left to right. A leading operator starts from the box's
+  // current value; the result stays in the box's unit.
+  let acc: number
+  let i: number
+  const first = seq[0]
+  if ('op' in first) {
+    acc = currentMm
+    i = 0
+  } else {
+    const m = parseMeasurement(first.term, defaultUnit)
+    if (m === null) return null
+    acc = m
+    i = 1
+  }
+
+  for (; i < seq.length; i += 2) {
+    const opTok = seq[i]
+    const termTok = seq[i + 1]
+    if (!opTok || !('op' in opTok) || !termTok || !('term' in termTok)) return null
+    const op = opTok.op
+    if (op === '+' || op === '-') {
+      const m = parseMeasurement(termTok.term, defaultUnit)
+      if (m === null) return null
+      acc = op === '+' ? acc + m : acc - m
+    } else {
+      const n = parseNumeric(termTok.term) // `*` / `/` take a plain scalar
+      if (n === null || (op === '/' && n === 0)) return null
+      acc = op === '*' ? acc * n : acc / n
+    }
+  }
+  return { mm: acc, explicitUnit: null }
+}
+
 function parseNumeric(part: string): number | null {
   const text = part.trim()
 

@@ -1,8 +1,7 @@
 import { useEffect, useState } from 'react'
 import {
-  detectDisplayUnit,
+  evaluateMeasurement,
   formatMeasurement,
-  parseMeasurement,
   UNIT_SUFFIX,
   type Unit,
 } from '../../lib/units'
@@ -49,21 +48,22 @@ export function MeasurementInput({
   }, [value, displayUnit, focused])
 
   const commit = () => {
-    const parsed = parseMeasurement(text, defaultUnit)
-    if (parsed === null) {
+    // Supports arithmetic (`+3`, `600 / 2`, `30 + 15 - 3`) as well as a plain
+    // measurement; a bare measurement may still adopt an explicitly typed unit.
+    const result = evaluateMeasurement(text, value, defaultUnit)
+    if (result === null) {
       setText(formatMeasurement(value, displayUnit)) // reject: restore last good value
       return
     }
 
-    const explicit = detectDisplayUnit(text)
-    if (explicit) {
-      setDisplayUnit(explicit)
+    if (result.explicitUnit) {
+      setDisplayUnit(result.explicitUnit)
       setOverridden(true)
     }
 
-    const mm = min === undefined ? parsed : Math.max(min, parsed)
+    const mm = min === undefined ? result.mm : Math.max(min, result.mm)
     onChange(mm)
-    setText(formatMeasurement(mm, explicit ?? displayUnit))
+    setText(formatMeasurement(mm, result.explicitUnit ?? displayUnit))
   }
 
   return (

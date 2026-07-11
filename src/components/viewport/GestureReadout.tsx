@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react'
-import { formatMeasurement, parseMeasurement, UNIT_SUFFIX } from '../../lib/units'
+import { evaluateMeasurement, formatMeasurement, UNIT_SUFFIX } from '../../lib/units'
 import { useDesignStore } from '../../store/designStore'
 
 /**
@@ -48,8 +48,10 @@ export function GestureReadout() {
           type="text"
           defaultValue={formatMeasurement(gesture.delta, unit)}
           onChange={(e) => {
-            const mm = parseMeasurement(e.target.value, unit)
-            if (mm !== null) gesture.apply(mm)
+            // Arithmetic works here too; a relative op (`+3`) applies to the
+            // gesture's current delta.
+            const result = evaluateMeasurement(e.target.value, gesture.delta, unit)
+            if (result) gesture.apply(result.mm)
           }}
           onKeyDown={(e) => {
             if (e.key === 'Enter') {
