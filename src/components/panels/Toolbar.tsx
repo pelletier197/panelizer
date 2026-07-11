@@ -2,17 +2,20 @@ import { useRef } from 'react'
 import type { Panel } from '../../types/panel'
 import { useDesignStore, type Tool } from '../../store/designStore'
 import { downloadDesign, parse } from '../../lib/persistence'
+import { defaultThinThickness } from '../../lib/panel'
 import { DOCUMENT_UNITS } from '../../lib/units'
 import { Menu } from '../ui/Menu'
 import { ToolHint } from '../layout/ToolHint'
 
 /** Quick-add presets so a carcass can be roughed out in a few clicks. Each sets
  *  the orientation and a typical size; everything stays editable afterwards.
- *  (A shelf is just a horizontal panel, i.e. the same as top/bottom.) */
-const ADD_PRESETS: { label: string; preset: Partial<Panel> }[] = [
+ *  Thickness is left to the document-unit default, except thin parts (a back),
+ *  which are flagged so they get the thin-stock default. (A shelf is just a
+ *  horizontal panel, i.e. the same as top/bottom.) */
+const ADD_PRESETS: { label: string; preset: Partial<Panel>; thin?: boolean }[] = [
   { label: 'Side', preset: { name: 'Side', normal: 'x', length: 580, width: 720 } },
   { label: 'Top / Bottom / Shelf', preset: { name: 'Top', normal: 'y', length: 600, width: 580 } },
-  { label: 'Back', preset: { name: 'Back', normal: 'z', length: 600, width: 720, thickness: 6 } },
+  { label: 'Back', preset: { name: 'Back', normal: 'z', length: 600, width: 720 }, thin: true },
 ]
 
 /** Toolbar buckets. A bucket with several modes opens a dropdown; a bucket with
@@ -32,8 +35,12 @@ const TOOL_SECTIONS: { label: string; tools: { tool: Tool; label: string }[] }[]
 export function Toolbar() {
   const panels = useDesignStore((s) => s.panels)
   const materials = useDesignStore((s) => s.materials)
+  const stocks = useDesignStore((s) => s.stocks)
   const unit = useDesignStore((s) => s.unit)
+  const kerf = useDesignStore((s) => s.kerf)
+  const margin = useDesignStore((s) => s.margin)
   const setUnit = useDesignStore((s) => s.setUnit)
+  const setCutlistOpen = useDesignStore((s) => s.setCutlistOpen)
   const tool = useDesignStore((s) => s.tool)
   const setTool = useDesignStore((s) => s.setTool)
   const addPanel = useDesignStore((s) => s.addPanel)
@@ -58,12 +65,12 @@ export function Toolbar() {
       <Menu label="+ Add">
         {(close) => (
           <div className="menu__list">
-            {ADD_PRESETS.map(({ label, preset }) => (
+            {ADD_PRESETS.map(({ label, preset, thin }) => (
               <button
                 key={label}
                 className="menu__item"
                 onClick={() => {
-                  addPanel(preset)
+                  addPanel(thin ? { ...preset, thickness: defaultThinThickness(unit) } : preset)
                   close()
                 }}
               >
@@ -127,6 +134,10 @@ export function Toolbar() {
 
       <div className="toolbar__spacer" />
 
+      <button className="toolbar__cutlist" disabled={empty} onClick={() => setCutlistOpen(true)}>
+        Cutlist
+      </button>
+
       <Menu label="☰" ariaLabel="Document menu" align="right">
         {(close) => (
           <div className="menu__list">
@@ -149,7 +160,7 @@ export function Toolbar() {
               className="menu__item"
               disabled={empty}
               onClick={() => {
-                downloadDesign({ panels, materials, unit })
+                downloadDesign({ panels, materials, stocks, unit, kerf, margin })
                 close()
               }}
             >

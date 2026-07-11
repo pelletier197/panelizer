@@ -1,5 +1,7 @@
 import type { Panel } from '../types/panel'
+import { defaultGrain } from '../types/panel'
 import type { Material } from './materials'
+import type { Stock } from './stock'
 import type { Unit } from './units'
 import { defaultMaterials, findMaterial } from './materials'
 
@@ -7,11 +9,21 @@ const STORAGE_KEY = 'wood3d.autosave'
 const FORMAT = 'wood3d'
 const VERSION = 1
 
-/** A full design: panels, the materials they use, and the default unit. */
+/** Default saw kerf and sheet trim margin (mm), used for cutlist nesting. */
+export const DEFAULT_KERF = 3
+export const DEFAULT_MARGIN = 10
+
+/** A full design: panels, the materials they use, the sheet-good stock to nest
+ *  them onto, cutlist settings, and the default display unit. */
 export interface Design {
   panels: Panel[]
   materials: Material[]
+  stocks: Stock[]
   unit: Unit
+  /** Saw blade width (mm) left between adjacent parts when nesting. */
+  kerf: number
+  /** Trim margin (mm) kept clear around the edge of each sheet. */
+  margin: number
 }
 
 /** On-disk / on-wire shape. Kept flat and versioned so older files can be
@@ -21,14 +33,16 @@ export interface DesignFile extends Design {
   version: number
 }
 
-export function serialize({ panels, materials, unit }: Design): DesignFile {
-  return { format: FORMAT, version: VERSION, unit, materials, panels }
+export function serialize({ panels, materials, stocks, unit, kerf, margin }: Design): DesignFile {
+  return { format: FORMAT, version: VERSION, unit, kerf, margin, materials, stocks, panels }
 }
 
 /** Parse and validate a design file, throwing on anything that isn't ours.
  *  Older files without a materials list get the default material, and any
- *  panel pointing at a missing material falls back to a valid one. Panel
- *  thickness is preserved as-is (it's a panel property, not the material's). */
+ *  panel pointing at a missing material falls back to a valid one. Fields added
+ *  later (grain, stocks, kerf, margin) are back-filled with sensible defaults,
+ *  so files from before those features still load. Panel thickness is preserved
+ *  as-is (it's a panel property, not the material's). */
 export function parse(json: string): Design {
   const data = JSON.parse(json) as Partial<DesignFile>
   if (data.format !== FORMAT || !Array.isArray(data.panels)) {
@@ -43,9 +57,17 @@ export function parse(json: string): Design {
   const panels = data.panels.map((p) => ({
     ...p,
     materialId: findMaterial(materials, p.materialId).id,
+    grain: p.grain ?? defaultGrain(p.length, p.width),
   }))
 
-  return { panels, materials, unit: data.unit ?? 'mm' }
+  return {
+    panels,
+    materials,
+    stocks: Array.isArray(data.stocks) ? data.stocks : [],
+    unit: data.unit ?? 'mm',
+    kerf: data.kerf ?? DEFAULT_KERF,
+    margin: data.margin ?? DEFAULT_MARGIN,
+  }
 }
 
 /** Trigger a browser download of the design as a `.wood3d.json` file. */
@@ -68,7 +90,14 @@ export function saveToStorage(design: Design): void {
 }
 
 export function loadFromStorage(): Design {
-  const empty: Design = { panels: [], materials: defaultMaterials(), unit: 'mm' }
+  const empty: Design = {
+    panels: [],
+    materials: defaultMaterials(),
+    stocks: [],
+    unit: 'mm',
+    kerf: DEFAULT_KERF,
+    margin: DEFAULT_MARGIN,
+  }
   try {
     const raw = localStorage.getItem(STORAGE_KEY)
     return raw ? parse(raw) : empty

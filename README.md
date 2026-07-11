@@ -52,29 +52,42 @@ src/
     snapping.ts           Magnetic move-snap + resize-face edge snap
     overlaps.ts           Where two panels interpenetrate (joint markers)
     resize.ts             Single-face resize math (opposite face fixed)
-    cutlist.ts            Derive & group the cutlist; CSV export
+    stock.ts              Sheet-good stock (material + thickness + sheet size)
+    nesting.ts            Pack parts onto stock → cut diagram (the cutlist)
+    parts.ts              Derive & group the parts list; CSV export
     persistence.ts        Serialize / parse / download / autosave
   store/designStore.ts    Zustand store — single source of truth + undo/redo
   components/
     viewport/             R3F canvas, scene, per-panel mesh, move/resize gizmos,
                           corner-tool overlay, overlap highlights
-    panels/               Toolbar, properties editor, cutlist table
+    panels/               Toolbar, properties, parts list, cutlist view
     layout/               Resizable sidebar, tool hint banner
     ui/                    Reusable form controls (unit-aware input, menu)
 ```
 
 ## Status
 
-Core loop and the assembly-aware tools are shipped, all under the rule that
-**the size you set is the size you cut** — panels are never auto-resized.
+Core loop, the assembly-aware tools, and the **cutlist** are shipped, all under
+the rule that **the size you set is the size you cut** — panels are never
+auto-resized.
+
+The **Cutlist** view (toolbar → *Cutlist*) is the payoff: enter your sheet
+goods (per material + thickness), set a global **kerf** and **margin**, and the
+parts nest onto sheets — grouped by material + thickness — as a scaled cut
+diagram with waste per material. **Grain** is per part (default: the longer
+edge); a grained part stays grain-parallel to the sheet, a grain-free part may
+rotate 90° for a tighter pack. Parts whose material + thickness has no stock are
+surfaced under **Missing stock** with a one-click *Add sheet* that pre-fills the
+right material and thickness. The packer (`lib/nesting.ts`) is a pure shelf/strip
+heuristic — swappable for a tighter algorithm behind the same signature.
 
 ### Ideas for later
 
-- **Stock nesting → cut diagram (the main goal).** Given the project's parts
-  and the stock sheets available (sheet size, quantity, maybe grain/kerf), pack
-  the parts onto sheets and produce an actual **cutlist** — a diagram showing
-  how to lay out and cut each sheet, with offcuts. This is the core deliverable
-  of the project; everything else feeds it.
+- **Tighter nesting.** The current packer is a first-fit shelf heuristic. A
+  guillotine / maxrects pass would cut waste, especially with mixed sizes.
+- **Multiple stock sizes per material+thickness**, offcut reuse, and honouring
+  stock quantity during packing (today the first matching stock size is used
+  and quantity is only flagged when exceeded).
 - **Rotation.** Add a real rotation to `Panel` (beyond the discrete
   thickness-axis) plus a rotate gizmo, with **snapping like move and resize**
   (snap to common angles / neighbour orientations). Cut dimensions are

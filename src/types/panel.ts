@@ -2,6 +2,12 @@
  *  plane of the other two axes. World convention: Y is up (height), Z is depth. */
 export type Axis = 'x' | 'y' | 'z'
 
+/** Which face edge the wood grain runs along, used when nesting parts onto
+ *  sheet goods. `none` means no grain constraint — the part may rotate freely
+ *  for tighter packing. Woodworking default is the longer edge (see
+ *  `defaultGrain`). */
+export type Grain = 'length' | 'width' | 'none'
+
 /**
  * A rectangular plywood panel — the atomic building block of a cabinet.
  *
@@ -24,4 +30,13 @@ export interface Panel {
   thickness: number
   position: [number, number, number]
   materialId: string
+  /** Which face edge the grain runs along, for cutlist nesting. Defaults to the
+   *  longer edge (see `defaultGrain`). */
+  grain: Grain
+}
+
+/** Woodworking default: grain runs along the longer face edge. Ties go to
+ *  length. */
+export function defaultGrain(length: number, width: number): Grain {
+  return width > length ? 'width' : 'length'
 }

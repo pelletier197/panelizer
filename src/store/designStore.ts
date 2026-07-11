@@ -2,9 +2,11 @@ import { create } from 'zustand'
 import type { Panel } from '../types/panel'
 import type { Design } from '../lib/persistence'
 import type { Material } from '../lib/materials'
+import type { Stock } from '../lib/stock'
 import type { Unit } from '../lib/units'
-import { createPanel } from '../lib/panel'
+import { createPanel, defaultThickness } from '../lib/panel'
 import { createMaterial } from '../lib/materials'
+import { createStock } from '../lib/stock'
 import { loadFromStorage, saveToStorage } from '../lib/persistence'
 
 /** Active viewport tool.
@@ -18,7 +20,10 @@ type Point = [number, number, number]
 interface Snapshot {
   panels: Panel[]
   materials: Material[]
+  stocks: Stock[]
   unit: Unit
+  kerf: number
+  margin: number
 }
 
 /** How many undo steps to keep. */
@@ -35,7 +40,10 @@ export interface ToolPick {
 interface DesignState {
   panels: Panel[]
   materials: Material[]
+  stocks: Stock[]
   unit: Unit
+  kerf: number
+  margin: number
   selectedId: string | null
   tool: Tool
   toolPick: ToolPick | null
@@ -52,6 +60,9 @@ interface DesignState {
   /** One-shot guard so a resize drag-release doesn't select the panel under
    *  the cursor. Internal. */
   suppressSelect: boolean
+  /** Whether the full-screen cutlist view is open. Transient UI state. */
+  cutlistOpen: boolean
+  setCutlistOpen: (open: boolean) => void
   setTool: (tool: Tool) => void
   setToolPick: (pick: ToolPick | null) => void
   setMeasurement: (m: { a: Point; b: Point } | null) => void
@@ -77,7 +88,13 @@ interface DesignState {
   updateMaterial: (id: string, patch: Partial<Material>) => void
   removeMaterial: (id: string) => void
 
+  addStock: (materialId: string, thickness?: number) => void
+  updateStock: (id: string, patch: Partial<Stock>) => void
+  removeStock: (id: string) => void
+
   setUnit: (unit: Unit) => void
+  setKerf: (mm: number) => void
+  setMargin: (mm: number) => void
   loadDesign: (design: Design) => void
   clear: () => void
 }
@@ -92,7 +109,10 @@ export const useDesignStore = create<DesignState>((set, get) => {
   const snapshot = (s: DesignState): Snapshot => ({
     panels: s.panels,
     materials: s.materials,
+    stocks: s.stocks,
     unit: s.unit,
+    kerf: s.kerf,
+    margin: s.margin,
   })
 
   // Every persisted change funnels through here so state, autosave, and the
@@ -102,7 +122,7 @@ export const useDesignStore = create<DesignState>((set, get) => {
   const commit = (next: Partial<DesignState>) => {
     const current = get()
     const merged = { ...current, ...next }
-    saveToStorage({ panels: merged.panels, materials: merged.materials, unit: merged.unit })
+    saveToStorage(snapshot(merged))
     // A drag's "before" is the state at its first live frame (`dragOrigin`), so
     // the whole drag is one undo step; a plain edit has no dragOrigin.
     const before = current.dragOrigin ?? snapshot(current)
@@ -130,7 +150,10 @@ export const useDesignStore = create<DesignState>((set, get) => {
     set({
       panels: snap.panels,
       materials: snap.materials,
+      stocks: snap.stocks,
       unit: snap.unit,
+      kerf: snap.kerf,
+      margin: snap.margin,
       selectedId: stillThere ? current.selectedId : null,
       toolPick: null,
       dragOrigin: null,
@@ -142,7 +165,10 @@ export const useDesignStore = create<DesignState>((set, get) => {
   return {
     panels: initial.panels,
     materials: initial.materials,
+    stocks: initial.stocks,
     unit: initial.unit,
+    kerf: initial.kerf,
+    margin: initial.margin,
     selectedId: null,
     tool: 'move',
     toolPick: null,
@@ -152,6 +178,9 @@ export const useDesignStore = create<DesignState>((set, get) => {
     future: [],
     dragOrigin: null,
     suppressSelect: false,
+    cutlistOpen: false,
+
+    setCutlistOpen: (cutlistOpen) => set({ cutlistOpen }),
 
     // Switching tools clears any in-progress pick and the shown measurement,
     // and always restores orbit (in case a drag was interrupted).
@@ -173,7 +202,8 @@ export const useDesignStore = create<DesignState>((set, get) => {
       const panel = createPanel({
         position: spawnOffset(get().panels.length),
         materialId: get().materials[0].id,
-        ...preset,
+        thickness: defaultThickness(get().unit),
+        ...preset, // a preset may override thickness (e.g. a thin back)
       })
       commit({ panels: [...get().panels, panel], selectedId: panel.id })
     },
@@ -249,16 +279,34 @@ export const useDesignStore = create<DesignState>((set, get) => {
       const remaining = get().materials.filter((m) => m.id !== id)
       if (remaining.length === 0) return
       const fallback = remaining[0].id
-      const panels = get().panels.map((p) =>
-        p.materialId === id ? { ...p, materialId: fallback } : p,
-      )
-      commit({ materials: remaining, panels })
+      const remap = <T extends { materialId: string }>(x: T) =>
+        x.materialId === id ? { ...x, materialId: fallback } : x
+      commit({
+        materials: remaining,
+        panels: get().panels.map(remap),
+        stocks: get().stocks.map(remap),
+      })
+    },
+
+    addStock: (materialId, thickness) => {
+      commit({ stocks: [...get().stocks, createStock(materialId, thickness, get().unit)] })
+    },
+
+    updateStock: (id, patch) => {
+      commit({ stocks: get().stocks.map((s) => (s.id === id ? { ...s, ...patch } : s)) })
+    },
+
+    removeStock: (id) => {
+      commit({ stocks: get().stocks.filter((s) => s.id !== id) })
     },
 
     setUnit: (unit) => commit({ unit }),
+    setKerf: (kerf) => commit({ kerf: Math.max(0, kerf) }),
+    setMargin: (margin) => commit({ margin: Math.max(0, margin) }),
 
-    loadDesign: ({ panels, materials, unit }) => commit({ panels, materials, unit, selectedId: null }),
+    loadDesign: ({ panels, materials, stocks, unit, kerf, margin }) =>
+      commit({ panels, materials, stocks, unit, kerf, margin, selectedId: null }),
 
-    clear: () => commit({ panels: [], selectedId: null }),
+    clear: () => commit({ panels: [], stocks: [], selectedId: null }),
   }
 })

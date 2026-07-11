@@ -3,6 +3,7 @@ import { Toolbar } from './components/panels/Toolbar'
 import { PropertiesPanel } from './components/panels/PropertiesPanel'
 import { MaterialsPanel } from './components/panels/MaterialsPanel'
 import { PartsPanel } from './components/panels/PartsPanel'
+import { CutlistModal } from './components/panels/CutlistModal'
 import { Viewport } from './components/viewport/Viewport'
 import { ResizableSidebar } from './components/layout/ResizableSidebar'
 import { useDesignStore } from './store/designStore'
@@ -49,6 +50,7 @@ export default function App() {
           <PartsPanel />
         </ResizableSidebar>
       </main>
+      <CutlistModal />
     </div>
   )
 }

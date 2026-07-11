@@ -38,6 +38,12 @@ export function toMm(value: number, unit: Unit): number {
   return value * MM_PER_UNIT[unit]
 }
 
+/** Whether the document unit is imperial (inches), so defaults should be clean
+ *  imperial sizes rather than clean metric ones. */
+export function isImperial(unit: Unit): boolean {
+  return unit === 'inch'
+}
+
 export function fromMm(mm: number, unit: Unit): number {
   return mm / MM_PER_UNIT[unit]
 }

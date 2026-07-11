@@ -358,6 +358,31 @@ select:focus {
   margin-top: 16px;
 }
 
+/* ---- Stock -------------------------------------------------------------- */
+
+.stock {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+
+.stock__row {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.stock__row select {
+  flex: 1;
+  min-width: 0;
+}
+
+.stock-panel__empty {
+  margin: 10px 0 0;
+  color: var(--text-dim);
+  font-size: 12px;
+}
+
 .color-swatches {
   display: flex;
   gap: 6px;
@@ -469,4 +494,166 @@ select:focus {
   margin: 12px 0 0;
   color: var(--text-dim);
   font-size: 12px;
+}
+
+/* ---- Cutlist view ------------------------------------------------------- */
+
+.cutlist-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  padding: 24px;
+  background: rgba(0, 0, 0, 0.55);
+}
+
+.cutlist-view {
+  margin: auto;
+  width: min(1100px, 100%);
+  height: min(90vh, 100%);
+  display: flex;
+  flex-direction: column;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+  overflow: hidden;
+}
+
+.cutlist-view__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+}
+
+.cutlist-view__header h2 {
+  margin: 0;
+  font-size: 16px;
+}
+
+.cutlist-view__close {
+  width: 30px;
+  padding: 0;
+}
+
+.cutlist-view__body {
+  flex: 1;
+  display: flex;
+  min-height: 0;
+}
+
+.cutlist-view__controls {
+  flex: none;
+  width: 280px;
+  padding: 16px;
+  overflow-y: auto;
+  border-right: 1px solid var(--border);
+}
+
+.cutlist-view__controls .field-group:first-child {
+  margin-top: 0;
+}
+
+.cutlist-view__result {
+  flex: 1;
+  padding: 16px;
+  overflow-y: auto;
+}
+
+.cutlist-view__hint {
+  color: var(--text-dim);
+  font-size: 12px;
+  margin: 8px 0 0;
+}
+
+.cut-group {
+  margin-bottom: 24px;
+}
+
+.cut-group h3 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 12px;
+  font-size: 14px;
+}
+
+.cut-group__stats {
+  color: var(--text-dim);
+  font-weight: 400;
+  font-size: 12px;
+}
+
+.cut-group__short {
+  color: var(--danger);
+}
+
+.cut-group__sheets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+
+.cut-group--unplaced ul {
+  margin: 0;
+  padding-left: 18px;
+  color: var(--text-dim);
+  font-size: 12px;
+}
+
+.sheet {
+  margin: 0;
+}
+
+.sheet__svg {
+  display: block;
+  border-radius: 3px;
+}
+
+.sheet__bg {
+  fill: var(--surface-2);
+  stroke: var(--border);
+}
+
+.sheet__margin {
+  fill: none;
+  stroke: var(--border);
+  stroke-dasharray: 4 3;
+}
+
+.sheet__part {
+  stroke: rgba(0, 0, 0, 0.55);
+  stroke-width: 1;
+  fill-opacity: 0.85;
+}
+
+.sheet__label {
+  fill: #1a1200;
+  font-size: 9px;
+  text-anchor: middle;
+  dominant-baseline: middle;
+  pointer-events: none;
+}
+
+.sheet figcaption {
+  margin-top: 4px;
+  color: var(--text-dim);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.cut-group--missing .missing-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 0;
+  border-top: 1px solid var(--border);
+  font-size: 13px;
+}
+
+.cut-group--missing .missing-row button {
+  flex: none;
 }
