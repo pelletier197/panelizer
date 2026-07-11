@@ -3,8 +3,8 @@ import type { Material } from './materials'
 import { findMaterial } from './materials'
 import { formatMeasurement, UNIT_SUFFIX, type Unit } from './units'
 
-/** One line of the cutlist: a group of identical parts and how many are needed. */
-export interface CutlistRow {
+/** One line of the parts list: a group of identical parts and how many are needed. */
+export interface PartRow {
   length: number
   width: number
   thickness: number
@@ -20,8 +20,8 @@ export interface CutlistRow {
  *  Sizes are exactly as drawn — the size you set is the size you cut. Face
  *  dimensions are normalised (longest side first) so a 600x400 and a 400x600
  *  panel are recognised as the same part. */
-export function buildCutlist(panels: Panel[], materials: Material[]): CutlistRow[] {
-  const rows = new Map<string, CutlistRow>()
+export function buildParts(panels: Panel[], materials: Material[]): PartRow[] {
+  const rows = new Map<string, PartRow>()
 
   for (const panel of panels) {
     const [length, width] = [panel.length, panel.width].sort((a, b) => b - a)
@@ -52,9 +52,9 @@ export function buildCutlist(panels: Panel[], materials: Material[]): CutlistRow
   )
 }
 
-/** Render the cutlist as CSV text (dimensions in `unit`), ready to paste into a
- *  spreadsheet. Inch fractions are quoted so the "/" survives the CSV. */
-export function cutlistToCsv(rows: CutlistRow[], unit: Unit): string {
+/** Render the parts list as CSV text (dimensions in `unit`), ready to paste
+ *  into a spreadsheet. Inch fractions are quoted so the "/" survives the CSV. */
+export function partsToCsv(rows: PartRow[], unit: Unit): string {
   const u = UNIT_SUFFIX[unit]
   const header = ['Qty', `Length (${u})`, `Width (${u})`, `Thickness (${u})`, 'Material']
   const lines = rows.map((r) =>

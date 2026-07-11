@@ -75,16 +75,9 @@ Core loop and the assembly-aware tools are shipped, all under the rule that
   the parts onto sheets and produce an actual **cutlist** — a diagram showing
   how to lay out and cut each sheet, with offcuts. This is the core deliverable
   of the project; everything else feeds it.
-- **Rename "Cutlist" panel → "Parts".** Today's Cutlist panel really lists the
-  project's components. Rename it **Parts** so the word "Cutlist" is free for
-  the stock-nesting diagram above. Standard woodworking/CAD term (part list /
-  BOM).
 - **Rotation.** Add a real rotation to `Panel` (beyond the discrete
   thickness-axis) plus a rotate gizmo, with **snapping like move and resize**
   (snap to common angles / neighbour orientations). Cut dimensions are
   unaffected.
-- **Slim down the Materials panel.** It takes up too much space and pulls
-  attention. Put a material's name and colour on a **single row**, with the
-  colour as a small **dropdown/swatch picker** rather than an inline palette.
 - **Bundle code-splitting.** The build is a single ~1.18 MB chunk (mostly
   Three.js). Fine for now; lazy-load / split if first-load matters.

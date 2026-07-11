@@ -12,7 +12,7 @@ export const DOCUMENT_UNITS: { value: Unit; label: string }[] = [
   { value: 'inch', label: 'inch' },
 ]
 
-/** Short suffix shown next to inputs and in cutlist headers. */
+/** Short suffix shown next to inputs and in the parts-table headers. */
 export const UNIT_SUFFIX: Record<Unit, string> = { mm: 'mm', cm: 'cm', inch: 'in' }
 
 const MM_PER_UNIT: Record<Unit, number> = { mm: 1, cm: 10, inch: 25.4 }

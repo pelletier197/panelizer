@@ -2,7 +2,7 @@ import { useEffect } from 'react'
 import { Toolbar } from './components/panels/Toolbar'
 import { PropertiesPanel } from './components/panels/PropertiesPanel'
 import { MaterialsPanel } from './components/panels/MaterialsPanel'
-import { CutlistPanel } from './components/panels/CutlistPanel'
+import { PartsPanel } from './components/panels/PartsPanel'
 import { Viewport } from './components/viewport/Viewport'
 import { ResizableSidebar } from './components/layout/ResizableSidebar'
 import { useDesignStore } from './store/designStore'
@@ -46,7 +46,7 @@ export default function App() {
         <ResizableSidebar>
           <PropertiesPanel />
           <MaterialsPanel />
-          <CutlistPanel />
+          <PartsPanel />
         </ResizableSidebar>
       </main>
     </div>

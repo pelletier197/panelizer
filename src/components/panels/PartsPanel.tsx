@@ -1,20 +1,20 @@
 import { useMemo } from 'react'
-import { buildCutlist, cutlistToCsv } from '../../lib/cutlist'
+import { buildParts, partsToCsv } from '../../lib/parts'
 import { formatMeasurement, UNIT_SUFFIX } from '../../lib/units'
 import { useDesignStore } from '../../store/designStore'
 
-/** Live cutlist derived from the panels. Identical parts are grouped and
- *  counted, and every dimension is shown in the document's unit; the CSV
- *  button copies the same table for a spreadsheet or the shop. */
-export function CutlistPanel() {
+/** Live list of the project's parts, derived from the panels. Identical parts
+ *  are grouped and counted, and every dimension is shown in the document's
+ *  unit; the CSV button copies the same table for a spreadsheet or the shop. */
+export function PartsPanel() {
   const panels = useDesignStore((s) => s.panels)
   const materials = useDesignStore((s) => s.materials)
   const unit = useDesignStore((s) => s.unit)
   const selectedId = useDesignStore((s) => s.selectedId)
   const select = useDesignStore((s) => s.select)
-  const rows = useMemo(() => buildCutlist(panels, materials), [panels, materials])
+  const rows = useMemo(() => buildParts(panels, materials), [panels, materials])
 
-  const copyCsv = () => navigator.clipboard.writeText(cutlistToCsv(rows, unit))
+  const copyCsv = () => navigator.clipboard.writeText(partsToCsv(rows, unit))
   const fmt = (mm: number) => formatMeasurement(mm, unit)
 
   // Clicking a row selects (and so highlights) its panel. For a multi-part row
@@ -25,18 +25,18 @@ export function CutlistPanel() {
   }
 
   return (
-    <section className="sidebar__section cutlist">
+    <section className="sidebar__section parts">
       <div className="sidebar__header">
-        <h2>Cutlist</h2>
+        <h2>Parts</h2>
         <button onClick={copyCsv} disabled={rows.length === 0}>
           Copy CSV
         </button>
       </div>
 
       {rows.length === 0 ? (
-        <p className="cutlist__empty">No panels yet.</p>
+        <p className="parts__empty">No panels yet.</p>
       ) : (
-        <table className="cutlist__table">
+        <table className="parts__table">
           <thead>
             <tr>
               <th>Qty</th>
@@ -59,7 +59,7 @@ export function CutlistPanel() {
                 <td>{fmt(r.width)}</td>
                 <td>{fmt(r.thickness)}</td>
                 <td>
-                  <span className="cutlist__swatch" style={{ background: r.color }} /> {r.material}
+                  <span className="parts__swatch" style={{ background: r.color }} /> {r.material}
                 </td>
               </tr>
             ))}
@@ -67,7 +67,7 @@ export function CutlistPanel() {
         </table>
       )}
 
-      <p className="cutlist__total">
+      <p className="parts__total">
         {panels.length} panel{panels.length === 1 ? '' : 's'} · {rows.length} unique part
         {rows.length === 1 ? '' : 's'} · dimensions in {UNIT_SUFFIX[unit]}
       </p>

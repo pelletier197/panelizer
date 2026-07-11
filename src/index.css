@@ -364,19 +364,32 @@ select:focus {
   flex-wrap: wrap;
 }
 
-.material {
-  padding: 10px 0;
-  border-bottom: 1px solid var(--border);
-}
-
-.material:last-child {
-  border-bottom: none;
-}
-
+/* One material = one compact row: colour picker, name, remove. */
 .material__row {
   display: flex;
+  align-items: center;
   gap: 6px;
-  margin-bottom: 8px;
+  margin-bottom: 6px;
+}
+
+.material__row input {
+  flex: 1;
+  min-width: 0;
+}
+
+/* Shrink the colour-picker dropdown trigger to just its swatch. */
+.material__row .menu__trigger {
+  flex: none;
+  padding: 4px;
+  line-height: 0;
+}
+
+.material__color {
+  display: block;
+  width: 20px;
+  height: 20px;
+  border-radius: 4px;
+  border: 1px solid var(--border);
 }
 
 .material__remove {
@@ -397,7 +410,7 @@ select:focus {
   border-color: var(--text);
 }
 
-.cutlist__swatch {
+.parts__swatch {
   display: inline-block;
   width: 14px;
   height: 14px;
@@ -414,45 +427,45 @@ select:focus {
   color: var(--text-dim);
 }
 
-/* ---- Cutlist ------------------------------------------------------------ */
+/* ---- Parts -------------------------------------------------------------- */
 
-.cutlist {
+.parts {
   flex: 1;
 }
 
-.cutlist__table {
+.parts__table {
   width: 100%;
   border-collapse: collapse;
   font-variant-numeric: tabular-nums;
 }
 
-.cutlist__table th,
-.cutlist__table td {
+.parts__table th,
+.parts__table td {
   text-align: left;
   padding: 5px 8px;
   border-bottom: 1px solid var(--border);
 }
 
-.cutlist__table th {
+.parts__table th {
   color: var(--text-dim);
   font-weight: 600;
   font-size: 12px;
 }
 
-.cutlist__table tbody tr {
+.parts__table tbody tr {
   cursor: pointer;
 }
 
-.cutlist__table tbody tr:hover {
+.parts__table tbody tr:hover {
   background: #2a2f38;
 }
 
-.cutlist__table tbody tr.is-selected {
+.parts__table tbody tr.is-selected {
   background: color-mix(in srgb, var(--accent) 28%, transparent);
 }
 
-.cutlist__total,
-.cutlist__empty {
+.parts__total,
+.parts__empty {
   margin: 12px 0 0;
   color: var(--text-dim);
   font-size: 12px;
