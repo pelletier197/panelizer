@@ -81,3 +81,40 @@ export function snapPosition(
 
   return result
 }
+
+/**
+ * While resizing, magnetically snap the moving face onto a nearby neighbour
+ * edge on the same axis.
+ *
+ * `rawDelta` is the pointer's raw face displacement (mm). We turn it into the
+ * face's would-be world coordinate, look for the closest neighbour edge
+ * (their min/max bound on this axis) within `threshold`, and if one is close
+ * enough return the delta that lands the face exactly on it. Otherwise the
+ * raw delta passes through untouched.
+ */
+export function snapResizeFace(
+  panel: Panel,
+  axis: number,
+  faceSign: 1 | -1,
+  rawDelta: number,
+  others: Panel[],
+  threshold: number,
+): number {
+  const half = panelBoxSize(panel)[axis] / 2
+  const faceStart = panel.position[axis] + faceSign * half
+  const faceNow = faceStart + rawDelta
+
+  let best = rawDelta
+  let bestDistance = threshold
+  for (const other of others) {
+    const b = panelBounds(other)
+    for (const edge of [b.min[axis], b.max[axis]]) {
+      const distance = Math.abs(faceNow - edge)
+      if (distance < bestDistance) {
+        bestDistance = distance
+        best = edge - faceStart
+      }
+    }
+  }
+  return best
+}

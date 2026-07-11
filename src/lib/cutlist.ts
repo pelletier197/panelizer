@@ -12,6 +12,8 @@ export interface CutlistRow {
   color: string
   quantity: number
   parts: string[]
+  /** Ids of the panels in this group, so a row can select them in the scene. */
+  ids: string[]
 }
 
 /** Group panels that share the same size and material into countable rows.
@@ -30,6 +32,7 @@ export function buildCutlist(panels: Panel[], materials: Material[]): CutlistRow
     if (row) {
       row.quantity += 1
       row.parts.push(panel.name)
+      row.ids.push(panel.id)
     } else {
       rows.set(key, {
         length,
@@ -39,6 +42,7 @@ export function buildCutlist(panels: Panel[], materials: Material[]): CutlistRow
         color: material.color,
         quantity: 1,
         parts: [panel.name],
+        ids: [panel.id],
       })
     }
   }

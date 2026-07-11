@@ -10,10 +10,19 @@ export function CutlistPanel() {
   const panels = useDesignStore((s) => s.panels)
   const materials = useDesignStore((s) => s.materials)
   const unit = useDesignStore((s) => s.unit)
+  const selectedId = useDesignStore((s) => s.selectedId)
+  const select = useDesignStore((s) => s.select)
   const rows = useMemo(() => buildCutlist(panels, materials), [panels, materials])
 
   const copyCsv = () => navigator.clipboard.writeText(cutlistToCsv(rows, unit))
   const fmt = (mm: number) => formatMeasurement(mm, unit)
+
+  // Clicking a row selects (and so highlights) its panel. For a multi-part row
+  // each click steps to the next part, so identical panels can all be found.
+  const selectRow = (ids: string[]) => {
+    const at = ids.indexOf(selectedId ?? '')
+    select(ids[(at + 1) % ids.length])
+  }
 
   return (
     <section className="sidebar__section cutlist">
@@ -39,7 +48,12 @@ export function CutlistPanel() {
           </thead>
           <tbody>
             {rows.map((r, i) => (
-              <tr key={i}>
+              <tr
+                key={i}
+                className={selectedId && r.ids.includes(selectedId) ? 'is-selected' : ''}
+                onClick={() => selectRow(r.ids)}
+                title={r.quantity > 1 ? 'Click to cycle through matching panels' : 'Click to select'}
+              >
                 <td>{r.quantity}</td>
                 <td>{fmt(r.length)}</td>
                 <td>{fmt(r.width)}</td>

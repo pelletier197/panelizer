@@ -1,6 +1,6 @@
 import { useRef } from 'react'
 import type { Panel } from '../../types/panel'
-import { useDesignStore } from '../../store/designStore'
+import { useDesignStore, type Tool } from '../../store/designStore'
 import { downloadDesign, parse } from '../../lib/persistence'
 import { DOCUMENT_UNITS } from '../../lib/units'
 import { Menu } from '../ui/Menu'
@@ -13,6 +13,20 @@ const ADD_PRESETS: { label: string; preset: Partial<Panel> }[] = [
   { label: 'Side', preset: { name: 'Side', normal: 'x', length: 580, width: 720 } },
   { label: 'Top / Bottom / Shelf', preset: { name: 'Top', normal: 'y', length: 600, width: 580 } },
   { label: 'Back', preset: { name: 'Back', normal: 'z', length: 600, width: 720, thickness: 6 } },
+]
+
+/** Toolbar buckets. A bucket with several modes opens a dropdown; a bucket with
+ *  a single mode is just a toggle button. */
+const TOOL_SECTIONS: { label: string; tools: { tool: Tool; label: string }[] }[] = [
+  {
+    label: 'Move',
+    tools: [
+      { tool: 'move', label: 'Free' },
+      { tool: 'move-snap', label: 'Snap point' },
+    ],
+  },
+  { label: 'Resize', tools: [{ tool: 'resize', label: 'Resize' }] },
+  { label: 'Measure', tools: [{ tool: 'measure', label: 'Measure' }] },
 ]
 
 export function Toolbar() {
@@ -59,12 +73,55 @@ export function Toolbar() {
         )}
       </Menu>
 
-      <div className="toolbar__group toolbar__tools" role="group" aria-label="Tools">
-        {(['move', 'snap', 'measure'] as const).map((t) => (
-          <button key={t} className={tool === t ? 'is-active' : ''} onClick={() => setTool(t)}>
-            {t === 'move' ? 'Move' : t === 'snap' ? 'Snap point' : 'Measure'}
-          </button>
-        ))}
+      <div className="toolbar__group" role="group" aria-label="Tools">
+        {TOOL_SECTIONS.map((section) => {
+          const active = section.tools.find((t) => t.tool === tool)
+
+          // Single-mode bucket: a plain toggle button.
+          if (section.tools.length === 1) {
+            const { tool: t, label } = section.tools[0]
+            return (
+              <button
+                key={section.label}
+                className={tool === t ? 'is-active' : ''}
+                onClick={() => setTool(t)}
+              >
+                {label}
+              </button>
+            )
+          }
+
+          // Multi-mode bucket: a dropdown showing the active sub-mode.
+          return (
+            <Menu
+              key={section.label}
+              ariaLabel={section.label}
+              label={
+                <span className={active ? 'toolbar__bucket is-active' : 'toolbar__bucket'}>
+                  {section.label}
+                  {active && <span className="toolbar__bucket-mode">{active.label}</span>}
+                </span>
+              }
+            >
+              {(close) => (
+                <div className="menu__list">
+                  {section.tools.map(({ tool: t, label }) => (
+                    <button
+                      key={t}
+                      className={tool === t ? 'menu__item is-active' : 'menu__item'}
+                      onClick={() => {
+                        setTool(t)
+                        close()
+                      }}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </Menu>
+          )
+        })}
       </div>
 
       <ToolHint />

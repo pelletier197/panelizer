@@ -8,16 +8,16 @@ import { useDesignStore } from '../../store/designStore'
 const toM = ([x, y, z]: Point): Point => [x * MM_TO_M, y * MM_TO_M, z * MM_TO_M]
 const round = (p: Point): Point => [Math.round(p[0]), Math.round(p[1]), Math.round(p[2])]
 
-const HIT_RADIUS = 0.01 // invisible click target (m)
-const DOT_RADIUS = 0.004 // visible dot on hover / selection (m)
+const HIT_RADIUS = 0.03 // invisible click target (m)
+const DOT_RADIUS = 0.004 // visible dot (m); grows on hover / selection
 
 /**
  * Corner-based tools:
- *  - `snap`: pick a corner on one panel, then a corner on another; the first
- *    panel translates so the corners coincide.
+ *  - `move-snap`: pick a corner on one panel, then a corner on another; the
+ *    first panel translates so the corners coincide.
  *  - `measure`: pick two corners; a line + distance label persist until the
  *    next measurement.
- * Corners are invisible until hovered; the first pick stays highlighted.
+ * Corners show as small dots, brighter on hover; the first pick stays lit.
  */
 export function ToolOverlay() {
   const tool = useDesignStore((s) => s.tool)
@@ -31,7 +31,7 @@ export function ToolOverlay() {
 
   const [hovered, setHovered] = useState<string | null>(null)
 
-  if (tool === 'move') return null
+  if (tool === 'move' || tool === 'resize') return null
 
   const handleCorner = (panelId: string, index: number, point: Point) => {
     if (!pick) {
@@ -39,7 +39,7 @@ export function ToolOverlay() {
       if (tool === 'measure') setMeasurement(null)
       return
     }
-    if (tool === 'snap') {
+    if (tool === 'move-snap') {
       const panel = panels.find((p) => p.id === pick.panelId)
       if (panel) {
         updatePanel(panel.id, {
@@ -79,12 +79,15 @@ export function ToolOverlay() {
                 <sphereGeometry args={[HIT_RADIUS, 8, 8]} />
                 <meshBasicMaterial transparent opacity={0} depthWrite={false} />
               </mesh>
-              {active && (
-                <mesh>
-                  <sphereGeometry args={[DOT_RADIUS, 16, 16]} />
-                  <meshBasicMaterial color={selected ? '#2a6cff' : '#ffffff'} depthTest={false} />
-                </mesh>
-              )}
+              <mesh>
+                <sphereGeometry args={[active ? DOT_RADIUS * 1.8 : DOT_RADIUS, 16, 16]} />
+                <meshBasicMaterial
+                  color={selected ? '#2a6cff' : active ? '#ffffff' : '#9fb4d8'}
+                  transparent
+                  opacity={active ? 1 : 0.5}
+                  depthTest={false}
+                />
+              </mesh>
             </group>
           )
         }),

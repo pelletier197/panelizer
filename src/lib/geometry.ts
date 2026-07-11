@@ -1,4 +1,4 @@
-import type { Panel } from '../types/panel'
+import type { Axis, Panel } from '../types/panel'
 
 /** Scene is modelled in millimetres but rendered in metres, so Three.js works
  *  with comfortable ~1-unit numbers. Multiply mm by this to get metres. */
@@ -24,4 +24,18 @@ export function panelBoxSize({ length, width, thickness, normal }: Panel): Vec3 
     case 'z':
       return [length, width, thickness]
   }
+}
+
+type Dimension = 'length' | 'width' | 'thickness'
+
+const AXIS_FIELD: Record<Axis, [Dimension, Dimension, Dimension]> = {
+  x: ['thickness', 'width', 'length'],
+  y: ['length', 'thickness', 'width'],
+  z: ['length', 'width', 'thickness'],
+}
+
+/** Inverse of `panelBoxSize`: which panel field a world axis maps to for a
+ *  given orientation. `axis` is 0=X, 1=Y, 2=Z. */
+export function axisField(normal: Axis, axis: 0 | 1 | 2): Dimension {
+  return AXIS_FIELD[normal][axis]
 }

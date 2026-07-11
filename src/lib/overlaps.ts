@@ -7,8 +7,10 @@ export interface OverlapBox {
   size: [number, number, number]
 }
 
-/** Ignore overlaps thinner than this (mere touching / float noise). */
-const MIN_OVERLAP = 0.5
+/** Ignore overlaps thinner than this. Panels are stored as whole millimetres,
+ *  so a butt joint that rounds a hair past flush leaves a ~1 mm sliver that
+ *  isn't a real joint — only count interpenetration deeper than that. */
+const MIN_OVERLAP = 1.5
 
 /**
  * Every region where two panels interpenetrate. This is purely informational —

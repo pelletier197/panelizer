@@ -6,6 +6,7 @@ import { MM_TO_M, panelBoxSize } from '../../lib/geometry'
 import { findMaterial } from '../../lib/materials'
 import { SNAP_THRESHOLD_MM, snapPosition } from '../../lib/snapping'
 import { useDesignStore } from '../../store/designStore'
+import { ResizeHandles } from './ResizeHandles'
 
 const toMetres = ([x, y, z]: [number, number, number]): [number, number, number] => [
   x * MM_TO_M,
@@ -20,7 +21,7 @@ const toMetres = ([x, y, z]: [number, number, number]): [number, number, number]
 export function PanelMesh({ panel }: { panel: Panel }) {
   const meshRef = useRef<Mesh>(null!)
   const selected = useDesignStore((s) => s.selectedId === panel.id)
-  const select = useDesignStore((s) => s.select)
+  const sceneSelect = useDesignStore((s) => s.sceneSelect)
   const updatePanel = useDesignStore((s) => s.updatePanel)
   const movePanelLive = useDesignStore((s) => s.movePanelLive)
   const panels = useDesignStore((s) => s.panels)
@@ -64,7 +65,7 @@ export function PanelMesh({ panel }: { panel: Panel }) {
         position={position}
         onClick={(e) => {
           e.stopPropagation()
-          select(panel.id)
+          sceneSelect(panel.id)
         }}
       >
         <boxGeometry args={size} />
@@ -84,6 +85,8 @@ export function PanelMesh({ panel }: { panel: Panel }) {
           onMouseUp={commitPosition}
         />
       )}
+
+      {selected && tool === 'resize' && <ResizeHandles panel={panel} />}
     </>
   )
 }

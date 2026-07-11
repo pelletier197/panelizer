@@ -7,13 +7,25 @@ import { createPanel } from '../lib/panel'
 import { createMaterial } from '../lib/materials'
 import { loadFromStorage, saveToStorage } from '../lib/persistence'
 
-/** Active viewport tool. `move` shows the translate gizmo; `snap` and
- *  `measure` show clickable panel corners. */
-export type Tool = 'move' | 'snap' | 'measure'
+/** Active viewport tool.
+ *  - `move` / `resize` show a drag gizmo (translate / per-face resize).
+ *  - `move-snap` and `measure` show clickable panel corners. */
+export type Tool = 'move' | 'move-snap' | 'resize' | 'measure'
 
 type Point = [number, number, number]
 
-/** A corner the user picked as the first click of a snap/measure operation. */
+/** An undoable design snapshot. Selection and tool are transient and left out. */
+interface Snapshot {
+  panels: Panel[]
+  materials: Material[]
+  unit: Unit
+}
+
+/** How many undo steps to keep. */
+const HISTORY_LIMIT = 100
+
+/** A corner the user picked as the first click of a corner-pick tool
+ *  (`move-snap`, `resize-point`, `measure`). */
 export interface ToolPick {
   panelId: string
   index: number
@@ -28,17 +40,38 @@ interface DesignState {
   tool: Tool
   toolPick: ToolPick | null
   measurement: { a: Point; b: Point } | null
+  /** Whether orbit navigation is live. Resize handles switch this off while
+   *  the pointer is on them so a face-drag never spins the camera. */
+  orbitEnabled: boolean
+  /** Undo/redo stacks of design snapshots (transient, not persisted). */
+  past: Snapshot[]
+  future: Snapshot[]
+  /** The pre-drag snapshot captured on the first live update of a drag, so the
+   *  whole drag collapses into one undo step (not one per frame). Internal. */
+  dragOrigin: Snapshot | null
+  /** One-shot guard so a resize drag-release doesn't select the panel under
+   *  the cursor. Internal. */
+  suppressSelect: boolean
   setTool: (tool: Tool) => void
   setToolPick: (pick: ToolPick | null) => void
   setMeasurement: (m: { a: Point; b: Point } | null) => void
+  setOrbitEnabled: (enabled: boolean) => void
+  undo: () => void
+  redo: () => void
 
   addPanel: (preset?: Partial<Panel>) => void
   updatePanel: (id: string, patch: Partial<Panel>) => void
   movePanelLive: (id: string, position: [number, number, number]) => void
+  resizePanelLive: (id: string, patch: Partial<Panel>) => void
   removePanel: (id: string) => void
   duplicatePanel: (id: string) => void
   setPanelMaterial: (panelId: string, materialId: string) => void
   select: (id: string | null) => void
+  /** Select from a click in the 3D scene — no-ops once if a resize drag just
+   *  armed suppression, so releasing a handle doesn't select the panel under it. */
+  sceneSelect: (id: string) => void
+  /** Swallow the next scene-select (the click synthesised when a drag ends). */
+  armSelectSuppression: () => void
 
   addMaterial: () => void
   updateMaterial: (id: string, patch: Partial<Material>) => void
@@ -56,12 +89,54 @@ const spawnOffset = (index: number): [number, number, number] => [index * 30, in
 export const useDesignStore = create<DesignState>((set, get) => {
   const initial = loadFromStorage()
 
-  // Every persisted change funnels through here so state and autosave stay in
-  // sync. Selection is transient and intentionally left out of autosave.
+  const snapshot = (s: DesignState): Snapshot => ({
+    panels: s.panels,
+    materials: s.materials,
+    unit: s.unit,
+  })
+
+  // Every persisted change funnels through here so state, autosave, and the
+  // undo history stay in sync. The pre-change snapshot is pushed onto `past`
+  // and the redo stack is cleared (a fresh edit forks history). Selection is
+  // transient and intentionally left out of both autosave and history.
   const commit = (next: Partial<DesignState>) => {
-    const merged = { ...get(), ...next }
+    const current = get()
+    const merged = { ...current, ...next }
     saveToStorage({ panels: merged.panels, materials: merged.materials, unit: merged.unit })
-    set(next)
+    // A drag's "before" is the state at its first live frame (`dragOrigin`), so
+    // the whole drag is one undo step; a plain edit has no dragOrigin.
+    const before = current.dragOrigin ?? snapshot(current)
+    set({
+      ...next,
+      past: [...current.past, before].slice(-HISTORY_LIMIT),
+      future: [],
+      dragOrigin: null,
+    })
+  }
+
+  // Live (non-persisted) drag update. Captures the pre-drag snapshot once so
+  // the eventual commit can attribute the whole drag to a single undo step.
+  const live = (panels: Panel[]) => {
+    const current = get()
+    set({ panels, dragOrigin: current.dragOrigin ?? snapshot(current) })
+  }
+
+  // Move one step through history. `snap` is the snapshot to apply; the current
+  // state is pushed onto the opposite stack so the move is itself reversible.
+  const applyHistory = (snap: Snapshot, from: 'past' | 'future') => {
+    const current = get()
+    saveToStorage(snap)
+    const stillThere = snap.panels.some((p) => p.id === current.selectedId)
+    set({
+      panels: snap.panels,
+      materials: snap.materials,
+      unit: snap.unit,
+      selectedId: stillThere ? current.selectedId : null,
+      toolPick: null,
+      dragOrigin: null,
+      past: from === 'past' ? current.past.slice(0, -1) : [...current.past, snapshot(current)],
+      future: from === 'future' ? current.future.slice(1) : [snapshot(current), ...current.future],
+    })
   }
 
   return {
@@ -72,11 +147,27 @@ export const useDesignStore = create<DesignState>((set, get) => {
     tool: 'move',
     toolPick: null,
     measurement: null,
+    orbitEnabled: true,
+    past: [],
+    future: [],
+    dragOrigin: null,
+    suppressSelect: false,
 
-    // Switching tools clears any in-progress pick and the shown measurement.
-    setTool: (tool) => set({ tool, toolPick: null, measurement: null }),
+    // Switching tools clears any in-progress pick and the shown measurement,
+    // and always restores orbit (in case a drag was interrupted).
+    setTool: (tool) => set({ tool, toolPick: null, measurement: null, orbitEnabled: true, dragOrigin: null }),
     setToolPick: (toolPick) => set({ toolPick }),
     setMeasurement: (measurement) => set({ measurement }),
+    setOrbitEnabled: (orbitEnabled) => set({ orbitEnabled }),
+
+    undo: () => {
+      const { past } = get()
+      if (past.length > 0) applyHistory(past[past.length - 1], 'past')
+    },
+    redo: () => {
+      const { future } = get()
+      if (future.length > 0) applyHistory(future[0], 'future')
+    },
 
     addPanel: (preset = {}) => {
       const panel = createPanel({
@@ -94,7 +185,13 @@ export const useDesignStore = create<DesignState>((set, get) => {
     // Live position update during a drag: no autosave (the drop commits it),
     // so overlaps and neighbours recompute in real time without disk churn.
     movePanelLive: (id, position) => {
-      set({ panels: get().panels.map((p) => (p.id === id ? { ...p, position } : p)) })
+      live(get().panels.map((p) => (p.id === id ? { ...p, position } : p)))
+    },
+
+    // Live length/width/position update while dragging a resize face handle;
+    // same non-autosaved pattern as movePanelLive.
+    resizePanelLive: (id, patch) => {
+      live(get().panels.map((p) => (p.id === id ? { ...p, ...patch } : p)))
     },
 
     removePanel: (id) => {
@@ -121,7 +218,22 @@ export const useDesignStore = create<DesignState>((set, get) => {
       })
     },
 
-    select: (id) => set({ selectedId: id }),
+    select: (id) => set({ selectedId: id, dragOrigin: null }),
+
+    sceneSelect: (id) => {
+      if (get().suppressSelect) {
+        set({ suppressSelect: false })
+        return
+      }
+      set({ selectedId: id, dragOrigin: null })
+    },
+
+    // Arm suppression for the click the browser fires when a drag ends, and
+    // self-clear next frame so a later genuine click still selects.
+    armSelectSuppression: () => {
+      set({ suppressSelect: true })
+      requestAnimationFrame(() => set({ suppressSelect: false }))
+    },
 
     addMaterial: () => {
       commit({ materials: [...get().materials, createMaterial(get().materials.length)] })

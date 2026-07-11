@@ -7,6 +7,7 @@ import { Scene } from './Scene'
  *  orientation gizmo, and the cabinet scene. Clicking empty space deselects. */
 export function Viewport() {
   const select = useDesignStore((s) => s.select)
+  const orbitEnabled = useDesignStore((s) => s.orbitEnabled)
 
   return (
     <Canvas
@@ -32,7 +33,7 @@ export function Viewport() {
 
       <Scene />
 
-      <OrbitControls makeDefault />
+      <OrbitControls makeDefault enabled={orbitEnabled} />
       <GizmoHelper alignment="bottom-right" margin={[70, 70]}>
         <GizmoViewport labelColor="white" axisHeadScale={1} />
       </GizmoHelper>
