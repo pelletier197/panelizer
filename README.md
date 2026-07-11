@@ -82,14 +82,13 @@ right material and thickness. All matching stock sizes are used (not just the
 first): parts fill open sheets, and a new sheet is the smallest stock that fits,
 so offcuts/small sheets go first and waste drops. Stock **quantities** are
 honoured — the packer never invents sheets; parts that then don't fit are
-reported as *Not enough stock*. The per-sheet packer (`lib/nesting.ts`) is a
-pure shelf/strip heuristic — swappable for a tighter algorithm behind the same
-signature.
+reported as *Not enough stock*. The per-sheet packer (`lib/nesting.ts`) is
+MaxRects (best-short-side-fit) with first-fit-decreasing input — it reclaims the
+scrap a shelf packer leaves below short parts. Swappable behind the same
+signature for a full solver later.
 
 ### Ideas for later
 
-- **Tighter nesting.** The current packer is a first-fit shelf heuristic. A
-  guillotine / maxrects pass would cut waste, especially with mixed sizes.
 - **Rotation.** Add a real rotation to `Panel` (beyond the discrete
   thickness-axis) plus a rotate gizmo, with **snapping like move and resize**
   (snap to common angles / neighbour orientations). Cut dimensions are

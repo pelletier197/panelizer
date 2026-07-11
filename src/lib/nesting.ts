@@ -75,58 +75,102 @@ function footprints(panel: Panel): Footprint[] {
   ]
 }
 
-interface Shelf {
-  y: number // top of the shelf within the usable area
-  height: number
-  cursorX: number // next free x within the usable area
-}
-
-interface Sheet {
-  length: number
-  width: number
-  uL: number // usable length (sheet length minus both margins)
-  uW: number // usable width
-  shelves: Shelf[]
-  usedHeight: number // total shelf heights + kerf gaps
-  placements: Placement[]
-  usedArea: number
-}
-
 /** Whether a part fits an empty usable area in at least one allowed orientation. */
 function fitsUsable(panel: Panel, uL: number, uW: number): boolean {
   return footprints(panel).some((f) => f.w <= uL && f.h <= uW)
 }
 
-/** Try to place one part on a sheet using a shelf/strip packer. Returns true if
- *  it fit. Uses the sheet's own usable dimensions. */
-function placeOnSheet(sheet: Sheet, panel: Panel, kerf: number, margin: number): boolean {
-  for (const f of footprints(panel)) {
-    if (f.w > sheet.uL || f.h > sheet.uW) continue // can't fit this orientation at all
+// ---- MaxRects bin packer -------------------------------------------------
+//
+// Each sheet is a bin whose empty space is tracked as a set of maximal free
+// rectangles. A part is placed in the free rect with the tightest fit (best
+// short-side leftover), then every free rect it overlaps is split into the
+// sub-rectangles that remain, and rectangles fully contained in another are
+// pruned. This reclaims the space a shelf packer wastes below short parts.
+//
+// Kerf (saw width) is handled by reserving `part + kerf` on the right/bottom of
+// each placement, and giving the bin an extra `kerf` of usable space, so parts
+// keep a blade gap between them while still sitting flush to the margins.
 
-    // 1) An existing shelf tall enough with room to its right.
-    for (const shelf of sheet.shelves) {
-      const gap = shelf.cursorX === 0 ? 0 : kerf
-      if (f.h <= shelf.height && shelf.cursorX + gap + f.w <= sheet.uL) {
-        const x = margin + shelf.cursorX + gap
-        sheet.placements.push({ panelId: panel.id, name: panel.name, x, y: margin + shelf.y, w: f.w, h: f.h, rotated: f.rotated })
-        shelf.cursorX += gap + f.w
-        sheet.usedArea += panel.length * panel.width
-        return true
+interface FreeRect {
+  x: number
+  y: number
+  w: number
+  h: number
+}
+
+interface Bin {
+  length: number
+  width: number
+  free: FreeRect[]
+  placements: Placement[]
+  usedArea: number
+}
+
+const area = (l: number, w: number) => l * w
+
+/** `a` fully contains `b`. */
+function contains(a: FreeRect, b: FreeRect): boolean {
+  return a.x <= b.x && a.y <= b.y && a.x + a.w >= b.x + b.w && a.y + a.h >= b.y + b.h
+}
+
+/** The parts of `free` left uncovered after `used` is placed over it (up to 4
+ *  rectangles). If they don't overlap, `free` is returned unchanged. */
+function splitFree(free: FreeRect, used: FreeRect): FreeRect[] {
+  const noOverlap =
+    used.x >= free.x + free.w ||
+    used.x + used.w <= free.x ||
+    used.y >= free.y + free.h ||
+    used.y + used.h <= free.y
+  if (noOverlap) return [free]
+
+  const pieces: FreeRect[] = []
+  if (used.y > free.y) pieces.push({ x: free.x, y: free.y, w: free.w, h: used.y - free.y })
+  if (used.y + used.h < free.y + free.h)
+    pieces.push({ x: free.x, y: used.y + used.h, w: free.w, h: free.y + free.h - (used.y + used.h) })
+  if (used.x > free.x) pieces.push({ x: free.x, y: free.y, w: used.x - free.x, h: free.h })
+  if (used.x + used.w < free.x + free.w)
+    pieces.push({ x: used.x + used.w, y: free.y, w: free.x + free.w - (used.x + used.w), h: free.h })
+  return pieces
+}
+
+/** Place a part in a bin using best-short-side-fit. Returns true if it fit. */
+function placeInBin(bin: Bin, panel: Panel, kerf: number, margin: number): boolean {
+  let best:
+    | { score1: number; score2: number; x: number; y: number; rw: number; rh: number; w: number; h: number; rotated: boolean }
+    | null = null
+
+  for (const f of footprints(panel)) {
+    const rw = f.w + kerf // reserved footprint (leaves a saw gap on right/bottom)
+    const rh = f.h + kerf
+    for (const fr of bin.free) {
+      if (rw > fr.w || rh > fr.h) continue
+      const leftoverW = fr.w - rw
+      const leftoverH = fr.h - rh
+      const score1 = Math.min(leftoverW, leftoverH) // best short-side fit
+      const score2 = Math.max(leftoverW, leftoverH)
+      if (!best || score1 < best.score1 || (score1 === best.score1 && score2 < best.score2)) {
+        best = { score1, score2, x: fr.x, y: fr.y, rw, rh, w: f.w, h: f.h, rotated: f.rotated }
       }
     }
-
-    // 2) A new shelf below the existing ones.
-    const gap = sheet.shelves.length === 0 ? 0 : kerf
-    const y = sheet.usedHeight + gap
-    if (y + f.h <= sheet.uW) {
-      sheet.shelves.push({ y, height: f.h, cursorX: f.w })
-      sheet.usedHeight = y + f.h
-      sheet.placements.push({ panelId: panel.id, name: panel.name, x: margin, y: margin + y, w: f.w, h: f.h, rotated: f.rotated })
-      sheet.usedArea += panel.length * panel.width
-      return true
-    }
   }
-  return false
+
+  if (!best) return false
+
+  const used: FreeRect = { x: best.x, y: best.y, w: best.rw, h: best.rh }
+  bin.free = bin.free.flatMap((fr) => splitFree(fr, used))
+  bin.free = bin.free.filter((r, i) => !bin.free.some((o, j) => j !== i && contains(o, r)))
+  bin.placements.push({
+    panelId: panel.id,
+    name: panel.name,
+    x: margin + best.x,
+    y: margin + best.y,
+    w: best.w,
+    h: best.h,
+    rotated: best.rotated,
+  })
+  bin.usedArea += panel.length * panel.width
+  return true
 }
 
 /** Stock inventory entry: one stock size and how many sheets remain to open. */
@@ -136,8 +180,6 @@ interface Slot {
   uW: number
   remaining: number // Infinity when the stock quantity is unlimited (null)
 }
-
-const area = (l: number, w: number) => l * w
 
 /** Stock matches a group's thickness within this tolerance (mm). Exact float
  *  equality is too brittle across unit rounding: an "11/16" sheet (17.4625) and
@@ -160,8 +202,8 @@ const THICKNESS_TOL = 0.8
  *  - `too-big`   — larger than every matching sheet,
  *  - `no-space`  — would fit, but the sheet quantity ran out.
  *
- * The per-sheet packer is a shelf/strip heuristic (first-fit-decreasing by
- * longest edge) — a tighter algorithm can drop in behind this same signature.
+ * Per sheet the packer is MaxRects (best-short-side-fit) with first-fit-
+ * decreasing input order — a good waste/scrap trade-off without a full solver.
  */
 export function generateCutlist(
   panels: Panel[],
@@ -216,7 +258,7 @@ export function generateCutlist(
       (a, b) => Math.max(b.length, b.width) - Math.max(a.length, a.width),
     )
 
-    const sheets: Sheet[] = []
+    const bins: Bin[] = []
     for (const panel of sorted) {
       if (!fitsAnyStock(panel)) {
         unfit(panel, 'too-big')
@@ -224,10 +266,10 @@ export function generateCutlist(
       }
 
       // Try existing open sheets, smallest first (fill offcuts before big ones).
-      const openSmallestFirst = [...sheets].sort((a, b) => area(a.length, a.width) - area(b.length, b.width))
+      const openSmallestFirst = [...bins].sort((a, b) => area(a.length, a.width) - area(b.length, b.width))
       let placed = false
-      for (const sheet of openSmallestFirst) {
-        if (placeOnSheet(sheet, panel, kerf, margin)) {
+      for (const bin of openSmallestFirst) {
+        if (placeInBin(bin, panel, kerf, margin)) {
           placed = true
           break
         }
@@ -241,18 +283,17 @@ export function generateCutlist(
         continue
       }
       slot.remaining -= 1
-      const sheet: Sheet = {
+      const bin: Bin = {
         length: slot.stock.length,
         width: slot.stock.width,
-        uL: slot.uL,
-        uW: slot.uW,
-        shelves: [],
-        usedHeight: 0,
+        // Bin gets one extra kerf so a part reserved as (size + kerf) still sits
+        // flush to the far margin.
+        free: [{ x: 0, y: 0, w: slot.uL + kerf, h: slot.uW + kerf }],
         placements: [],
         usedArea: 0,
       }
-      placeOnSheet(sheet, panel, kerf, margin)
-      sheets.push(sheet)
+      placeInBin(bin, panel, kerf, margin)
+      bins.push(bin)
     }
 
     groups.push({
@@ -260,12 +301,12 @@ export function generateCutlist(
       materialName: material.name,
       color: material.color,
       thickness,
-      sheets: sheets.map((s, i) => ({
+      sheets: bins.map((b, i) => ({
         index: i + 1,
-        length: s.length,
-        width: s.width,
-        placements: s.placements,
-        usedArea: s.usedArea,
+        length: b.length,
+        width: b.width,
+        placements: b.placements,
+        usedArea: b.usedArea,
       })),
     })
   }
