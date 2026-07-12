@@ -1,6 +1,8 @@
 <div align="center">
   
-  # 🪚 Panelizer
+  <img src="public/logo.png" alt="Panelizer Logo" width="120"/>
+
+  # Panelizer
 
   **A free, fast, browser-based cabinet and plywood designer.** <br>
   *Turn your ideas into accurate cutlists in minutes.*
@@ -11,7 +13,7 @@
 
   <br>
 
-  <img src="docs/screenshot.png" alt="Panelizer Workspace Screenshot" width="850"/>
+  ![Watch the video](./public/tour.mp4)
 
 </div>
 
@@ -28,6 +30,7 @@ It’s built for **speed and simplicity**, not to replace heavyweight CAD.
 * **Want to sketch a cabinet and walk into the shop with a cut diagram 5 minutes later?** That’s Panelizer.
 
 ---
+
 
 ## ✨ Features
 
