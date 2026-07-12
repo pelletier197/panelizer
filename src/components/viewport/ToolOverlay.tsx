@@ -103,6 +103,8 @@ export function ToolOverlay() {
               (measurement.a[2] + measurement.b[2]) / 2,
             ])}
             center
+            // Cap below the cutlist overlay (z-index 50) so it can't float over it.
+            zIndexRange={[40, 0]}
           >
             <span className="measure-label">
               {formatMeasurement(distance(measurement.a, measurement.b), unit)}

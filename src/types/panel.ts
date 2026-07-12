@@ -33,6 +33,9 @@ export interface Panel {
   /** Which face edge the grain runs along, for cutlist nesting. Defaults to the
    *  longer edge (see `defaultGrain`). */
   grain: Grain
+  /** When true the part is skipped by the cutlist nesting (e.g. it's already
+   *  cut). Absent/false means it's included. */
+  excludeFromCutlist?: boolean
 }
 
 /** Woodworking default: grain runs along the longer face edge. Ties go to

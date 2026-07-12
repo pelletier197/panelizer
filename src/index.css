@@ -476,6 +476,50 @@ select:focus {
   border-top: 1px solid var(--border);
 }
 
+/* Collapsed one-line view of a sheet good; expands to the grid on Edit. */
+.stock__summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+  padding-top: 8px;
+  font-size: 12px;
+}
+
+.stock__name {
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.stock__dims {
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.stock__edit {
+  margin-left: auto;
+}
+
+.stock__actions {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+/* All action buttons are the same square icon button (pencil, check, ✕). */
+.stock__summary button,
+.stock__actions button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+}
+
 .stock__row {
   display: flex;
   gap: 6px;
@@ -737,6 +781,7 @@ select:focus {
 }
 
 .grain-group__table {
+  width: 100%;
   border-collapse: separate;
   border-spacing: 0 6px;
 }
@@ -744,6 +789,16 @@ select:focus {
 .grain-group__table td {
   padding: 2px 8px 2px 0;
   vertical-align: middle;
+}
+
+/* Size column soaks up the slack so the grain thumb hugs the right edge. */
+.grain-group__table td:nth-last-child(2) {
+  width: 100%;
+}
+
+.grain-group__table td:last-child {
+  padding-right: 0;
+  text-align: right;
 }
 
 .grain-group__table tr {
@@ -755,25 +810,45 @@ select:focus {
   background: color-mix(in srgb, var(--accent) 20%, transparent);
 }
 
-/* Orientation preview swatch in the grain list. */
+/* Parts marked already-cut: dimmed, but the checkbox stays crisp to click. */
+.grain-group__table tr.is-excluded td:not(:first-child) {
+  opacity: 0.4;
+}
+
+.grain-include {
+  cursor: pointer;
+  accent-color: var(--accent);
+}
+
+/* Orientation preview + toggle in the grain list — click cycles the grain. */
 .grain-thumb {
-  display: block;
+  display: inline-block;
+  vertical-align: middle;
+  cursor: pointer;
 }
 
 .grain-thumb rect {
   fill: color-mix(in srgb, var(--accent) 14%, transparent);
   stroke: var(--text-dim);
   stroke-width: 1;
+  transition: stroke 0.1s;
 }
 
-.grain-thumb line {
-  stroke: var(--text-dim);
-  stroke-width: 1;
+.grain-thumb:hover rect,
+.grain-thumb:focus-visible rect {
+  stroke: var(--accent);
 }
 
-.grain-thumb__free {
-  fill: var(--text-dim);
-  font-size: 11px;
+.grain-thumb:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+  border-radius: 3px;
+}
+
+.grain-thumb__glyph {
+  fill: var(--text);
+  font-size: 13px;
+  font-weight: 600;
 }
 
 .grain-warn {
@@ -863,30 +938,72 @@ select:focus {
   fill-opacity: 1;
 }
 
-/* On-piece dimension labels shown while a part is hovered. A thin dark halo
- * keeps them legible over the fill without muddying the glyphs. */
-.sheet__dim {
-  fill: #fff;
-  font-family: inherit;
-  font-size: 10px;
-  font-weight: 600;
-  font-variant-numeric: tabular-nums;
-  text-anchor: middle;
-  dominant-baseline: middle;
-  paint-order: stroke;
-  stroke: rgba(0, 0, 0, 0.7);
-  stroke-width: 1.2px;
-  stroke-linejoin: round;
+/* On-piece part name: an HTML chip (via <foreignObject>) so long names wrap
+ * inside the part instead of overflowing, on a dark pill that stays readable
+ * over any material colour. */
+.sheet__label-fo {
+  overflow: hidden;
   pointer-events: none;
 }
 
 .sheet__label {
-  fill: #1a1200;
-  font-family: inherit;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  padding: 2px;
+  box-sizing: border-box;
+}
+
+.sheet__label-text {
+  max-width: 100%;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: rgb(0 0 0 / 0.34);
+  color: rgb(255 255 255);
   font-size: 9px;
   font-weight: 600;
-  text-anchor: middle;
-  dominant-baseline: middle;
+  line-height: 1.25;
+  text-align: center;
+  overflow-wrap: anywhere;
+}
+
+/* On-piece dimension chips shown while a part is hovered — same readable pill
+ * as the name, high contrast against the fill. */
+.sheet__dim {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+
+.sheet__dim-chip {
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: rgb(0 0 0 / 0.34);
+  color: rgb(255 255 255);
+  font-size: 10px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* Instant custom tooltip (replaces the slow native title attribute). Positioned
+ * at the cursor; offset up-right so it doesn't sit under the pointer. */
+.tooltip {
+  position: fixed;
+  z-index: 60;
+  transform: translate(12px, -50%);
+  padding: 3px 7px;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  color: var(--text);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  box-shadow: 0 2px 8px rgb(0 0 0 / 0.4);
   pointer-events: none;
 }
 

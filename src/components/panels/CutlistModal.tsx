@@ -6,11 +6,15 @@ import { formatMeasurement } from '../../lib/units'
 import { useDesignStore } from '../../store/designStore'
 import { MeasurementInput } from '../ui/MeasurementInput'
 
-const GRAINS: { value: Grain; label: string }[] = [
-  { value: 'length', label: 'Length' },
-  { value: 'width', label: 'Width' },
-  { value: 'none', label: 'Free' },
-]
+/** Click order for the grain toggle: width → length → free → (loops back). */
+const GRAIN_CYCLE: Grain[] = ['width', 'length', 'none']
+const nextGrain = (g: Grain): Grain => GRAIN_CYCLE[(GRAIN_CYCLE.indexOf(g) + 1) % GRAIN_CYCLE.length]
+
+const GRAIN_LABEL: Record<Grain, string> = {
+  width: 'Grain along width',
+  length: 'Grain along length',
+  none: 'Free orientation',
+}
 
 /** Longest sheet drawn this wide (px); everything else scales to match. */
 const SHEET_MAX_PX = 360
@@ -53,12 +57,29 @@ export function CutlistModal() {
   const removeStock = useDesignStore((s) => s.removeStock)
   const updatePanel = useDesignStore((s) => s.updatePanel)
 
+  // Parts flagged "already cut" are dropped before nesting, but still listed in
+  // the grain editor (dimmed) so they can be re-enabled.
   const result = useMemo(
-    () => generateCutlist(panels, materials, stocks, kerf, margin),
+    () => generateCutlist(panels.filter((p) => !p.excludeFromCutlist), materials, stocks, kerf, margin),
     [panels, materials, stocks, kerf, margin],
   )
   const parts = useMemo(() => buildParts(panels, materials), [panels, materials])
   const grainOf = (ids: string[]) => panels.find((p) => p.id === ids[0])?.grain ?? 'length'
+  const cycleGrain = (ids: string[]) => {
+    const next = nextGrain(grainOf(ids))
+    ids.forEach((id) => updatePanel(id, { grain: next }))
+  }
+  // Add a sheet and drop straight into editing it (a fresh sheet needs sizing).
+  const addAndEdit = () => {
+    addStock(materials[0].id)
+    const created = useDesignStore.getState().stocks.at(-1)
+    if (created) setEditingStock(created.id)
+  }
+  const includedOf = (ids: string[]) => !panels.find((p) => p.id === ids[0])?.excludeFromCutlist
+  const toggleIncluded = (ids: string[]) => {
+    const exclude = includedOf(ids) // currently included → exclude it
+    ids.forEach((id) => updatePanel(id, { excludeFromCutlist: exclude }))
+  }
 
   // Grain is edited per material + thickness, since that's how stock is keyed —
   // one heading per sheet type, its parts listed by name underneath.
@@ -78,6 +99,10 @@ export function CutlistModal() {
   // Panels currently hovered — shared between the grain list and the cut
   // diagrams so hovering either side highlights the matching parts.
   const [hovered, setHovered] = useState<string[] | null>(null)
+  // Instant custom tooltip for a hovered cut piece (native <title> is slow).
+  const [tip, setTip] = useState<{ x: number; y: number; text: string } | null>(null)
+  // Sheet-good row being edited; others collapse to a one-line summary.
+  const [editingStock, setEditingStock] = useState<string | null>(null)
 
   useEffect(() => {
     try {
@@ -165,47 +190,69 @@ export function CutlistModal() {
             <div className="field-group">
               <div className="sidebar__header">
                 <h3>Sheet goods</h3>
-                <button onClick={() => addStock(materials[0].id)}>+ Add</button>
+                <button onClick={addAndEdit}>+ Add</button>
               </div>
               {stocks.length === 0 && (
                 <p className="cutlist-view__hint">Add the sheets you have — parts nest onto stock of the same material and thickness.</p>
               )}
-              {stocks.map((s) => (
-                <div className="stock" key={s.id}>
-                  <div className="stock__row">
-                    <select value={s.materialId} onChange={(e) => updateStock(s.id, { materialId: e.target.value })}>
-                      {materials.map((m) => (
-                        <option key={m.id} value={m.id}>
-                          {m.name}
-                        </option>
-                      ))}
-                    </select>
+              {stocks.map((s) => {
+                const mat = materials.find((m) => m.id === s.materialId)
+                return editingStock === s.id ? (
+                  <div className="stock stock--editing" key={s.id}>
+                    <div className="stock__row">
+                      <select value={s.materialId} onChange={(e) => updateStock(s.id, { materialId: e.target.value })}>
+                        {materials.map((m) => (
+                          <option key={m.id} value={m.id}>
+                            {m.name}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="stock__grid">
+                      <MeasurementInput label="Thickness" value={s.thickness} defaultUnit={unit} min={1} onChange={(v) => updateStock(s.id, { thickness: v })} />
+                      <label className="field">
+                        <span className="field__label">Quantity</span>
+                        <span className="field__control">
+                          <input
+                            type="number"
+                            min={1}
+                            placeholder="∞"
+                            value={s.quantity ?? ''}
+                            onChange={(e) => {
+                              const n = parseInt(e.target.value, 10)
+                              updateStock(s.id, { quantity: Number.isFinite(n) && n > 0 ? n : null })
+                            }}
+                          />
+                        </span>
+                      </label>
+                      <MeasurementInput label="Length" value={s.length} defaultUnit={unit} min={1} onChange={(v) => updateStock(s.id, { length: v })} />
+                      <MeasurementInput label="Width" value={s.width} defaultUnit={unit} min={1} onChange={(v) => updateStock(s.id, { width: v })} />
+                    </div>
+                    <div className="stock__actions">
+                      <button className="material__remove" aria-label="Remove stock" onClick={() => removeStock(s.id)}>
+                        ✕
+                      </button>
+                      <button className="stock__done" aria-label="Done editing" onClick={() => setEditingStock(null)}>
+                        <CheckIcon />
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="stock stock__summary" key={s.id}>
+                    <span className="parts__swatch" style={{ background: mat?.color }} />
+                    <span className="stock__name">{mat?.name} · {fmt(s.thickness)}</span>
+                    <span className="stock__dims">
+                      {fmt(s.length)} × {fmt(s.width)} · {s.quantity ? `${s.quantity}×` : '∞'}
+                    </span>
+                    <button className="stock__edit" aria-label="Edit stock" onClick={() => setEditingStock(s.id)}>
+                      <PencilIcon />
+                    </button>
                     <button className="material__remove" aria-label="Remove stock" onClick={() => removeStock(s.id)}>
                       ✕
                     </button>
                   </div>
-                  <div className="stock__grid">
-                    <MeasurementInput label="Thickness" value={s.thickness} defaultUnit={unit} min={1} onChange={(v) => updateStock(s.id, { thickness: v })} />
-                    <label className="field">
-                      <span className="field__label">Quantity</span>
-                      <span className="field__control">
-                        <input
-                          type="number"
-                          min={1}
-                          placeholder="∞"
-                          value={s.quantity ?? ''}
-                          onChange={(e) => {
-                            const n = parseInt(e.target.value, 10)
-                            updateStock(s.id, { quantity: Number.isFinite(n) && n > 0 ? n : null })
-                          }}
-                        />
-                      </span>
-                    </label>
-                    <MeasurementInput label="Length" value={s.length} defaultUnit={unit} min={1} onChange={(v) => updateStock(s.id, { length: v })} />
-                    <MeasurementInput label="Width" value={s.width} defaultUnit={unit} min={1} onChange={(v) => updateStock(s.id, { width: v })} />
-                  </div>
-                </div>
-              ))}
+                )
+              })}
             </div>
 
             <div className="field-group">
@@ -222,24 +269,35 @@ export function CutlistModal() {
                         // Use the real panel's length/width (PartRow dims are
                         // normalised longest-first, which would flip the thumb).
                         const panel = panels.find((p) => p.id === r.ids[0])
+                        const included = includedOf(r.ids)
                         return (
                           <tr
                             key={i}
-                            className={isHovered(r.ids) ? 'is-hover' : ''}
+                            className={`${isHovered(r.ids) ? 'is-hover' : ''}${included ? '' : ' is-excluded'}`}
                             onMouseEnter={() => setHovered(r.ids)}
                             onMouseLeave={() => setHovered(null)}
                           >
                             <td>
-                              <GrainThumb
-                                length={panel?.length ?? r.length}
-                                width={panel?.width ?? r.width}
-                                grain={panel?.grain ?? 'length'}
+                              <input
+                                type="checkbox"
+                                className="grain-include"
+                                checked={included}
+                                onChange={() => toggleIncluded(r.ids)}
+                                aria-label={included ? 'Exclude from cutlist (already cut)' : 'Include in cutlist'}
+                                onMouseEnter={(e) => setTip({ x: e.clientX, y: e.clientY, text: included ? 'In cutlist — uncheck if already cut' : 'Excluded — check to add back' })}
+                                onMouseMove={(e) => setTip({ x: e.clientX, y: e.clientY, text: included ? 'In cutlist — uncheck if already cut' : 'Excluded — check to add back' })}
+                                onMouseLeave={() => setTip(null)}
                               />
                             </td>
                             <td className="parts__name">
                               {partNames(r.parts)}
                               {note && (
-                                <span className="grain-warn" title={note}>
+                                <span
+                                  className="grain-warn"
+                                  onMouseEnter={(e) => setTip({ x: e.clientX, y: e.clientY, text: note })}
+                                  onMouseMove={(e) => setTip({ x: e.clientX, y: e.clientY, text: note })}
+                                  onMouseLeave={() => setTip(null)}
+                                >
                                   ⚠
                                 </span>
                               )}
@@ -249,16 +307,13 @@ export function CutlistModal() {
                               {fmt(r.length)} × {fmt(r.width)}
                             </td>
                             <td>
-                              <select
-                                value={grainOf(r.ids)}
-                                onChange={(e) => r.ids.forEach((id) => updatePanel(id, { grain: e.target.value as Grain }))}
-                              >
-                                {GRAINS.map((g) => (
-                                  <option key={g.value} value={g.value}>
-                                    {g.label}
-                                  </option>
-                                ))}
-                              </select>
+                              <GrainThumb
+                                length={panel?.length ?? r.length}
+                                width={panel?.width ?? r.width}
+                                grain={panel?.grain ?? 'length'}
+                                onClick={() => cycleGrain(r.ids)}
+                                onTip={setTip}
+                              />
                             </td>
                           </tr>
                         )
@@ -310,6 +365,7 @@ export function CutlistModal() {
                         unit={unit}
                         hovered={hovered}
                         onHover={setHovered}
+                        onTip={setTip}
                       />
                     ))}
                   </div>
@@ -365,14 +421,20 @@ export function CutlistModal() {
             )}
           </main>
         </div>
+
+        {tip && (
+          <div className="tooltip" style={{ left: tip.x, top: tip.y }}>
+            {tip.text}
+          </div>
+        )}
       </div>
     </div>
   )
 }
 
 /** One sheet drawn to scale, with its parts, kerf gaps, and margin border.
- *  Parts highlight on hover (and cross-highlight the grain list) and carry a
- *  native tooltip so even the small ones can be identified. */
+ *  Parts highlight on hover (and cross-highlight the grain list) and pop an
+ *  instant tooltip so even the small ones can be identified. */
 function SheetSvg({
   sheet,
   scale,
@@ -381,6 +443,7 @@ function SheetSvg({
   unit,
   hovered,
   onHover,
+  onTip,
 }: {
   sheet: SheetLayout
   scale: number
@@ -389,6 +452,7 @@ function SheetSvg({
   unit: import('../../lib/units').Unit
   hovered: string[] | null
   onHover: (ids: string[] | null) => void
+  onTip: (tip: { x: number; y: number; text: string } | null) => void
 }) {
   const W = sheet.length * scale
   const H = sheet.width * scale
@@ -414,8 +478,23 @@ function SheetSvg({
           return (
             <g
               key={p.panelId}
-              onMouseEnter={() => onHover([p.panelId])}
-              onMouseLeave={() => onHover(null)}
+              onMouseEnter={(e) => {
+                onHover([p.panelId])
+                onTip({
+                  x: e.clientX,
+                  y: e.clientY,
+                  text: `${p.name} · ${label(p.w)} × ${label(p.h)}`,
+                })
+              }}
+              onMouseMove={(e) => onTip({
+                x: e.clientX,
+                y: e.clientY,
+                text: `${p.name} · ${label(p.w)} × ${label(p.h)}`,
+              })}
+              onMouseLeave={() => {
+                onHover(null)
+                onTip(null)
+              }}
             >
               <rect
                 x={px}
@@ -424,32 +503,29 @@ function SheetSvg({
                 height={ph}
                 fill={color}
                 className={isHot ? 'sheet__part sheet__part--hover' : 'sheet__part'}
-              >
-                <title>
-                  {p.name} · {label(p.w)} × {label(p.h)}
-                  {p.rotated ? ' (rotated)' : ''}
-                </title>
-              </rect>
+              />
               {pw > 34 && ph > 16 && (
-                <text x={px + pw / 2} y={py + ph / 2} className="sheet__label">
-                  {p.name}
-                </text>
+                <foreignObject x={px} y={py} width={pw} height={ph} className="sheet__label-fo">
+                  <div className="sheet__label">
+                    <span className="sheet__label-text">{p.name}</span>
+                  </div>
+                </foreignObject>
               )}
               {isHot && (
                 <>
                   {/* Size on the sheet: width along the top, height down the left. */}
-                  <text x={px + pw / 2} y={py + 11} textAnchor="middle" className="sheet__dim">
-                    {label(p.w)}
-                  </text>
-                  <text
-                    x={px + 11}
-                    y={py + ph / 2}
-                    textAnchor="middle"
-                    transform={`rotate(-90 ${px + 11} ${py + ph / 2})`}
-                    className="sheet__dim"
-                  >
-                    {label(p.h)}
-                  </text>
+                  <foreignObject x={px + pw / 2 - 40} y={py + 2} width={80} height={18}>
+                    <div className="sheet__dim">
+                      <span className="sheet__dim-chip">{label(p.w)}</span>
+                    </div>
+                  </foreignObject>
+                  <g transform={`rotate(-90 ${px + 11} ${py + ph / 2})`}>
+                    <foreignObject x={px + 11 - 40} y={py + ph / 2 - 9} width={80} height={18}>
+                      <div className="sheet__dim">
+                        <span className="sheet__dim-chip">{label(p.h)}</span>
+                      </div>
+                    </foreignObject>
+                  </g>
                 </>
               )}
             </g>
@@ -463,12 +539,25 @@ function SheetSvg({
   )
 }
 
-/** A tiny preview of the part as it sits on the sheet. Sheet length is
- *  horizontal, so a `width`-grain part is turned 90° (its footprint becomes
- *  width × length) — the rectangle's proportions show how it's being placed.
- *  Faint horizontal lines mark the grain running along the sheet length; a free
- *  part shows a ↻ (the packer may rotate it either way). */
-function GrainThumb({ length, width, grain }: { length: number; width: number; grain: Grain }) {
+/** Combined preview + toggle for a part's grain. The rectangle turns to show
+ *  how the part actually sits on the sheet (a `width`-grain part rotates 90°,
+ *  same as before). Grain always lies along the sheet length once placed, so
+ *  the overlaid glyph is ↔ for any constrained part and ↻ for a free one — the
+ *  rect's rotation is what tells length from width grain apart. Click cycles
+ *  width → length → free, replacing the old dropdown. */
+function GrainThumb({
+  length,
+  width,
+  grain,
+  onClick,
+  onTip,
+}: {
+  length: number
+  width: number
+  grain: Grain
+  onClick: () => void
+  onTip: (tip: { x: number; y: number; text: string } | null) => void
+}) {
   const rotated = grain === 'width' // grain edge must lie along the sheet length
   const footW = rotated ? width : length // horizontal extent on the sheet
   const footH = rotated ? length : width
@@ -482,31 +571,51 @@ function GrainThumb({ length, width, grain }: { length: number; width: number; g
   const x = (BOX_W - w) / 2
   const y = (BOX_H - h) / 2
 
-  const lines = []
-  if (grain !== 'none') {
-    const n = 3
-    for (let i = 1; i <= n; i++) {
-      const yy = y + (h * i) / (n + 1)
-      lines.push(<line key={i} x1={x + 2} y1={yy} x2={x + w - 2} y2={yy} />)
-    }
-  }
+  // Grain always lies along the sheet length once placed (the rect rotates to
+  // show it), so the arrow is horizontal for any constrained part; free spins.
+  const glyph = grain === 'none' ? '↻' : '↔'
+  const title = `${GRAIN_LABEL[grain]} · click to change`
 
-  const title =
-    grain === 'none'
-      ? 'Free — the packer may rotate it to fit'
-      : rotated
-        ? 'Turned 90° on the sheet (grain along width)'
-        : 'As drawn on the sheet (grain along length)'
   return (
-    <svg className="grain-thumb" width={BOX_W} height={BOX_H} aria-hidden>
-      <title>{title}</title>
+    <svg
+      className="grain-thumb"
+      width={BOX_W}
+      height={BOX_H}
+      role="button"
+      tabIndex={0}
+      aria-label={title}
+      onClick={onClick}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault()
+          onClick()
+        }
+      }}
+      onMouseEnter={(e) => onTip({ x: e.clientX, y: e.clientY, text: title })}
+      onMouseMove={(e) => onTip({ x: e.clientX, y: e.clientY, text: title })}
+      onMouseLeave={() => onTip(null)}
+    >
       <rect x={x} y={y} width={w} height={h} rx={1.5} />
-      {lines}
-      {grain === 'none' && (
-        <text x={BOX_W / 2} y={BOX_H / 2 + 3.5} textAnchor="middle" className="grain-thumb__free">
-          ↻
-        </text>
-      )}
+      <text x={BOX_W / 2} y={BOX_H / 2 + 3.5} textAnchor="middle" className="grain-thumb__glyph">
+        {glyph}
+      </text>
+    </svg>
+  )
+}
+
+function PencilIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M12 20h9" />
+      <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" />
+    </svg>
+  )
+}
+
+function CheckIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M20 6 9 17l-5-5" />
     </svg>
   )
 }

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { useDesignStore } from '../../store/designStore'
+import { useTooltip } from '../ui/useTooltip'
 
 /** Below this drag distance (px) a gesture is a click, not a marquee. */
 const DRAG_THRESHOLD_PX = 4
@@ -24,6 +25,9 @@ export function ViewportControls() {
   const dragMode = useDesignStore((s) => s.dragMode)
   const setDragMode = useDesignStore((s) => s.setDragMode)
   const setMarqueeBox = useDesignStore((s) => s.setMarqueeBox)
+
+  const rotateTip = useTooltip('Rotate — left-drag orbits the camera')
+  const selectTip = useTooltip('Select — left-drag boxes panels (Shift adds)')
 
   const rootRef = useRef<HTMLDivElement>(null)
   const start = useRef<{ x: number; y: number; additive: boolean } | null>(null)
@@ -85,18 +89,20 @@ export function ViewportControls() {
         <button
           className={dragMode === 'orbit' ? 'is-active' : ''}
           onClick={() => setDragMode('orbit')}
-          title="Rotate — left-drag orbits the camera"
           aria-label="Rotate mode"
+          {...rotateTip.trigger}
         >
           <RotateIcon />
+          {rotateTip.node}
         </button>
         <button
           className={dragMode === 'select' ? 'is-active' : ''}
           onClick={() => setDragMode('select')}
-          title="Select — left-drag boxes panels (Shift adds)"
           aria-label="Box select mode"
+          {...selectTip.trigger}
         >
           <SelectIcon />
+          {selectTip.node}
         </button>
       </div>
 
