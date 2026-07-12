@@ -15,6 +15,8 @@
 
   ![Demo](public/demo.gif)
 
+  View the full demo [here](https://)
+
 </div>
 
 ---
