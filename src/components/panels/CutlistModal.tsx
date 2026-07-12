@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { flushSync } from 'react-dom'
 import type { Grain } from '../../types/panel'
 import { generateCutlist, type SheetLayout } from '../../lib/nesting'
 import { buildParts, partNames, type PartRow } from '../../lib/parts'
@@ -16,8 +17,10 @@ const GRAIN_LABEL: Record<Grain, string> = {
   none: 'Free orientation',
 }
 
-/** Longest sheet drawn this wide (px); everything else scales to match. */
+/** Longest sheet drawn this wide (px); everything else scales to match. On
+ *  paper the sheets go wider so every part's label + size stays legible. */
 const SHEET_MAX_PX = 360
+const PRINT_SHEET_MAX_PX = 680
 
 /** Controls-panel width bounds + persisted UI preference. */
 const CONTROLS_MIN = 240
@@ -103,6 +106,20 @@ export function CutlistModal() {
   const [tip, setTip] = useState<{ x: number; y: number; text: string } | null>(null)
   // Sheet-good row being edited; others collapse to a one-line summary.
   const [editingStock, setEditingStock] = useState<string | null>(null)
+  // While printing, diagrams render every label + size, bigger and monochrome.
+  const [printing, setPrinting] = useState(false)
+
+  useEffect(() => {
+    // flushSync so the print-mode DOM is in place before the browser snapshots.
+    const before = () => flushSync(() => setPrinting(true))
+    const after = () => setPrinting(false)
+    window.addEventListener('beforeprint', before)
+    window.addEventListener('afterprint', after)
+    return () => {
+      window.removeEventListener('beforeprint', before)
+      window.removeEventListener('afterprint', after)
+    }
+  }, [])
 
   useEffect(() => {
     try {
@@ -174,6 +191,9 @@ export function CutlistModal() {
       <div className="cutlist-view" onClick={(e) => e.stopPropagation()}>
         <header className="cutlist-view__header">
           <h2>Cutlist</h2>
+          <button className="cutlist-view__print" onClick={() => window.print()}>
+            Print
+          </button>
           <button className="cutlist-view__close" aria-label="Close" onClick={() => setOpen(false)}>
             ✕
           </button>
@@ -345,7 +365,7 @@ export function CutlistModal() {
               const used = g.sheets.reduce((sum, s) => sum + s.usedArea, 0)
               const waste = sheetAreaSum ? Math.round((1 - used / sheetAreaSum) * 100) : 0
               const maxLength = Math.max(...g.sheets.map((s) => s.length))
-              const scale = SHEET_MAX_PX / maxLength
+              const scale = (printing ? PRINT_SHEET_MAX_PX : SHEET_MAX_PX) / maxLength
               return (
                 <section className="cut-group" key={g.key}>
                   <h3>
@@ -366,6 +386,7 @@ export function CutlistModal() {
                         hovered={hovered}
                         onHover={setHovered}
                         onTip={setTip}
+                        printing={printing}
                       />
                     ))}
                   </div>
@@ -419,6 +440,33 @@ export function CutlistModal() {
                 </ul>
               </section>
             )}
+            {/* Print-only parts table: every part to cut, with its dimensions,
+                so the printout carries the full list next to the diagrams. */}
+            <section className="cutlist-print-list">
+              <h3>Parts</h3>
+              <table>
+                <thead>
+                  <tr>
+                    <th>Qty</th>
+                    <th>Part</th>
+                    <th>Length × Width</th>
+                    <th>Thickness</th>
+                    <th>Material</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {parts.filter((r) => includedOf(r.ids)).map((r, i) => (
+                    <tr key={i}>
+                      <td>{r.quantity}×</td>
+                      <td>{partNames(r.parts)}</td>
+                      <td>{fmt(r.length)} × {fmt(r.width)}</td>
+                      <td>{fmt(r.thickness)}</td>
+                      <td>{r.material}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </section>
           </main>
         </div>
 
@@ -444,6 +492,7 @@ function SheetSvg({
   hovered,
   onHover,
   onTip,
+  printing,
 }: {
   sheet: SheetLayout
   scale: number
@@ -453,10 +502,50 @@ function SheetSvg({
   hovered: string[] | null
   onHover: (ids: string[] | null) => void
   onTip: (tip: { x: number; y: number; text: string } | null) => void
+  printing: boolean
 }) {
   const W = sheet.length * scale
   const H = sheet.width * scale
   const label = (mm: number) => formatMeasurement(mm, unit)
+
+  // Print decisions per part: dimensions are shown whenever they fit; the name
+  // is added only if there's extra room; parts too small get a letter that a
+  // legend under the sheet spells out. Approx text widths in px at the label
+  // font sizes (~5px/char) decide what fits along the part's long edge.
+  const letterFor = (i: number) => {
+    const base = String.fromCharCode(65 + (i % 26))
+    const grp = Math.floor(i / 26)
+    return grp ? `${base}${grp}` : base
+  }
+  const legend: { letter: string; text: string }[] = []
+  const plan = sheet.placements.map((p) => {
+    const pw = p.w * scale
+    const ph = p.h * scale
+    const wStr = label(p.w)
+    const hStr = label(p.h)
+    const size = `${wStr} × ${hStr}`
+    const needW = wStr.length * 5 + 6 // width dim runs along the top edge
+    const needH = hStr.length * 5 + 6 // height dim runs down the left edge
+    const needDim = size.length * 5 + 6
+    // Prefer the edge layout (dim on each edge). Thin strips that can't hold it
+    // fall back to a single centred dim; anything smaller becomes a letter.
+    let mode: 'edges' | 'dims' | 'letter'
+    if (pw >= needW + 2 && ph >= needH + 2) mode = 'edges'
+    else if (Math.min(pw, ph) >= 11 && Math.max(pw, ph) >= needDim) mode = 'dims'
+    else mode = 'letter'
+    // The name goes on the part when the inner area (clear of the edge dims)
+    // can hold it. Every part WITHOUT a name gets a letter so the legend can
+    // say what it is — you can always identify what you're cutting.
+    const innerW = pw - 20
+    const innerH = ph - 22
+    const named = mode === 'edges' && innerW >= 34 && innerH >= 12
+    let letter: string | undefined
+    if (printing && !named) {
+      letter = letterFor(legend.length)
+      legend.push({ letter, text: `${p.name} · ${size}` })
+    }
+    return { size, wStr, hStr, mode, named, letter, innerW, innerH }
+  })
 
   return (
     <figure className="sheet">
@@ -469,12 +558,13 @@ function SheetSvg({
           height={H - 2 * margin * scale}
           className="sheet__margin"
         />
-        {sheet.placements.map((p) => {
+        {sheet.placements.map((p, i) => {
           const px = p.x * scale
           const py = p.y * scale
           const pw = p.w * scale
           const ph = p.h * scale
           const isHot = hovered?.includes(p.panelId)
+          const { size, wStr, hStr, mode, named, letter, innerW, innerH } = plan[i]
           return (
             <g
               key={p.panelId}
@@ -504,28 +594,91 @@ function SheetSvg({
                 fill={color}
                 className={isHot ? 'sheet__part sheet__part--hover' : 'sheet__part'}
               />
-              {pw > 34 && ph > 16 && (
-                <foreignObject x={px} y={py} width={pw} height={ph} className="sheet__label-fo">
-                  <div className="sheet__label">
-                    <span className="sheet__label-text">{p.name}</span>
-                  </div>
-                </foreignObject>
-              )}
-              {isHot && (
+              {printing ? (
+                (() => {
+                  const cx = px + pw / 2
+                  const cy = py + ph / 2
+                  if (mode === 'letter') {
+                    return (
+                      <foreignObject x={cx - 9} y={cy - 9} width={18} height={18}>
+                        <div className="sheet__letter">{letter}</div>
+                      </foreignObject>
+                    )
+                  }
+                  if (mode === 'dims') {
+                    // Thin strip: its letter + dim, rotated to run along its length.
+                    const portrait = ph > pw
+                    const bw = portrait ? ph : pw
+                    const bh = portrait ? pw : ph
+                    return (
+                      <g transform={portrait ? `rotate(-90 ${cx} ${cy})` : undefined}>
+                        <foreignObject x={cx - bw / 2} y={cy - bh / 2} width={bw} height={bh} className="sheet__plabel-fo">
+                          <div className="sheet__plabel sheet__plabel--row">
+                            <span className="sheet__legend-key">{letter}</span>
+                            <span className="sheet__plabel-size">{size}</span>
+                          </div>
+                        </foreignObject>
+                      </g>
+                    )
+                  }
+                  // Edge layout: width along the top, height down the left. The
+                  // name sits centred when it fits; otherwise a letter does, and
+                  // the legend below says which part it is.
+                  return (
+                    <>
+                      <foreignObject x={cx - 40} y={py + 2} width={80} height={15}>
+                        <div className="sheet__dim">
+                          <span className="sheet__dim-chip">{wStr}</span>
+                        </div>
+                      </foreignObject>
+                      <g transform={`rotate(-90 ${px + 10} ${cy})`}>
+                        <foreignObject x={px + 10 - 40} y={cy - 8} width={80} height={15}>
+                          <div className="sheet__dim">
+                            <span className="sheet__dim-chip">{hStr}</span>
+                          </div>
+                        </foreignObject>
+                      </g>
+                      {named ? (
+                        <foreignObject x={px + 16} y={py + 16} width={innerW} height={innerH} className="sheet__namebox">
+                          <div className="sheet__plabel">
+                            <span className="sheet__plabel-name">{p.name}</span>
+                          </div>
+                        </foreignObject>
+                      ) : (
+                        // Bottom-right corner — clear of the top/left edge dims.
+                        <foreignObject x={px + pw - 16} y={py + ph - 16} width={14} height={14}>
+                          <div className="sheet__letter">{letter}</div>
+                        </foreignObject>
+                      )}
+                    </>
+                  )
+                })()
+              ) : (
                 <>
-                  {/* Size on the sheet: width along the top, height down the left. */}
-                  <foreignObject x={px + pw / 2 - 40} y={py + 2} width={80} height={18}>
-                    <div className="sheet__dim">
-                      <span className="sheet__dim-chip">{label(p.w)}</span>
-                    </div>
-                  </foreignObject>
-                  <g transform={`rotate(-90 ${px + 11} ${py + ph / 2})`}>
-                    <foreignObject x={px + 11 - 40} y={py + ph / 2 - 9} width={80} height={18}>
-                      <div className="sheet__dim">
-                        <span className="sheet__dim-chip">{label(p.h)}</span>
+                  {pw > 34 && ph > 16 && (
+                    <foreignObject x={px} y={py} width={pw} height={ph} className="sheet__label-fo">
+                      <div className="sheet__label">
+                        <span className="sheet__label-text">{p.name}</span>
                       </div>
                     </foreignObject>
-                  </g>
+                  )}
+                  {isHot && (
+                    <>
+                      {/* Size on the sheet: width along the top, height down the left. */}
+                      <foreignObject x={px + pw / 2 - 40} y={py + 2} width={80} height={18}>
+                        <div className="sheet__dim">
+                          <span className="sheet__dim-chip">{label(p.w)}</span>
+                        </div>
+                      </foreignObject>
+                      <g transform={`rotate(-90 ${px + 11} ${py + ph / 2})`}>
+                        <foreignObject x={px + 11 - 40} y={py + ph / 2 - 9} width={80} height={18}>
+                          <div className="sheet__dim">
+                            <span className="sheet__dim-chip">{label(p.h)}</span>
+                          </div>
+                        </foreignObject>
+                      </g>
+                    </>
+                  )}
                 </>
               )}
             </g>
@@ -536,6 +689,15 @@ function SheetSvg({
         Sheet {sheet.index} · {label(sheet.length)} × {label(sheet.width)}
         <span className="sheet__grain-hint">↔ grain</span>
       </figcaption>
+      {printing && legend.length > 0 && (
+        <ul className="sheet__legend">
+          {legend.map((e) => (
+            <li key={e.letter}>
+              <span className="sheet__legend-key">{e.letter}</span> {e.text}
+            </li>
+          ))}
+        </ul>
+      )}
     </figure>
   )
 }

@@ -703,13 +703,13 @@ select:focus {
 .cutlist-view__header {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  gap: 8px;
   padding: 12px 16px;
   border-bottom: 1px solid var(--border);
 }
 
 .cutlist-view__header h2 {
-  margin: 0;
+  margin: 0 auto 0 0; /* push the action buttons to the right */
   font-size: 16px;
 }
 
@@ -983,6 +983,84 @@ select:focus {
   overflow-wrap: anywhere;
 }
 
+/* Per-part label used when printing: name + size, centred and stacked, so it
+ * reads inside the part without the hover-only edge chips. */
+.sheet__plabel-fo {
+  overflow: visible;
+}
+
+.sheet__plabel {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  gap: 1px;
+  line-height: 1.15;
+  text-align: center;
+  color: var(--text);
+}
+
+.sheet__plabel--row {
+  flex-direction: row;
+  gap: 4px;
+}
+
+/* Name box is inset from the edge dims; clip so a long name can't spill onto
+ * them or a neighbour (it wraps within, and falls back to a letter if it can't
+ * fit — see the print plan). */
+.sheet__namebox {
+  overflow: hidden;
+}
+
+.sheet__plabel-name {
+  font-size: 10px;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.sheet__plabel-size {
+  font-size: 9px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Parts too small to label get a letter badge, spelled out in the legend. */
+.sheet__letter {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 12px;
+  height: 12px;
+  border: 1px solid currentColor;
+  border-radius: 999px;
+  font-size: 6px;
+  font-weight: 700;
+  line-height: 1;
+  color: var(--text);
+}
+
+.sheet__legend {
+  margin: 4px 0 0;
+  padding: 0;
+  list-style: none;
+  font-size: 10px;
+  line-height: 1.4;
+  color: var(--text-dim);
+}
+
+.sheet__legend-key {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 12px;
+  height: 12px;
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 1;
+  color: var(--text);
+}
+
 /* On-piece dimension chips shown while a part is hovered — same readable pill
  * as the name, high contrast against the fill. */
 .sheet__dim {
@@ -1040,4 +1118,141 @@ select:focus {
 
 .cut-group--missing .missing-row button {
   flex: none;
+}
+
+/* Parts table only shown when printing (see the print block below). */
+.cutlist-print-list {
+  display: none;
+}
+
+/* ---- Print: the cut diagrams + a full parts table on white paper --------- */
+@media print {
+  /* Drop the app chrome entirely (display:none, not visibility:hidden — the
+   * latter leaves empty boxes that pushed out a blank first page). */
+  .app > *:not(.cutlist-overlay) {
+    display: none !important;
+  }
+
+  .cutlist-overlay {
+    position: static;
+    inset: auto;
+    padding: 0;
+    background: #fff;
+    display: block;
+  }
+
+  .cutlist-view {
+    width: 100%;
+    height: auto;
+    margin: 0;
+    border: none;
+    border-radius: 0;
+    background: #fff;
+    color: #000;
+  }
+
+  /* Dark theme → readable ink on paper. */
+  .cutlist-view h2,
+  .cutlist-view h3,
+  .cutlist-view td,
+  .cutlist-view th,
+  .cutlist-view figcaption {
+    color: #000;
+  }
+
+  /* No shadows on paper (kills the stray drop-shadow under the modal/table). */
+  * {
+    box-shadow: none !important;
+  }
+
+  /* Monochrome diagrams: white parts, black outlines, no fills. */
+  .sheet__bg {
+    fill: #fff !important;
+    stroke: #000 !important;
+  }
+  .sheet__margin {
+    stroke: #999 !important;
+  }
+  .sheet__part,
+  .sheet__part--hover {
+    fill: #fff !important;
+    fill-opacity: 1 !important;
+    stroke: #000 !important;
+    stroke-width: 1 !important;
+  }
+
+  /* Print ink is black; size chips lose their pill (layout is in base rules). */
+  .sheet__plabel,
+  .sheet__plabel-name,
+  .sheet__plabel-size,
+  .sheet__letter,
+  .sheet__legend,
+  .sheet__legend-key {
+    color: #000 !important;
+  }
+  .sheet__dim-chip {
+    background: transparent !important;
+    color: #000 !important;
+  }
+
+  /* Swatches → outline only; grain hint neutral. */
+  .parts__swatch {
+    background: transparent !important;
+    border: 1px solid #000;
+  }
+  .sheet__grain-hint {
+    background: transparent !important;
+    border-color: #999 !important;
+    color: #000 !important;
+  }
+
+  /* Hide the interactive chrome: buttons, the controls panel, resizer. */
+  .cutlist-view__print,
+  .cutlist-view__close,
+  .cutlist-view__controls,
+  .cutlist-resizer,
+  .tooltip {
+    display: none !important;
+  }
+
+  .cutlist-view__body {
+    display: block;
+  }
+
+  .cutlist-view__result {
+    overflow: visible;
+    padding: 0;
+  }
+
+  /* Only keep an individual sheet whole; let a group flow across pages so a
+   * tall group doesn't get shoved to page 2 and leave page 1 blank. */
+  .cut-group {
+    break-inside: auto;
+  }
+  .sheet {
+    break-inside: avoid;
+  }
+
+  .cutlist-print-list {
+    display: block;
+    margin-top: 20px;
+    break-before: page;
+  }
+
+  .cutlist-print-list table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12px;
+  }
+
+  .cutlist-print-list th,
+  .cutlist-print-list td {
+    padding: 5px 8px;
+    text-align: left;
+    border: 1px solid #999;
+  }
+
+  .cutlist-print-list th {
+    background: #eee;
+  }
 }
