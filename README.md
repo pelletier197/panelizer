@@ -1,17 +1,24 @@
 <div align="center">
   
-  # 🪚 Panelizer
+  <img src="public/logo.png" alt="Panelizer Logo" width="120"/>
+
+  # Panelizer
 
   **A free, fast, browser-based cabinet and plywood designer.** <br>
   *Turn your ideas into accurate cutlists in minutes.*
 
-  [![Live App](https://img.shields.io/badge/▶_Try_Panelizer_Now-0052FF?style=for-the-badge)](https://pelletier197.github.io/panelizer/)
+  [![Live App](https://img.shields.io/badge/▶_Try_Panelizer_Now-0052FF?style=for-the-badge)](https://pelletier197.github.io/Panelizer/)
   [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=for-the-badge)](LICENSE)
   [![Contributions Welcome](https://img.shields.io/badge/Contributions-Welcome-brightgreen.svg?style=for-the-badge)](CONTRIBUTING.md)
 
   <br>
 
-  <img src="docs/screenshot.png" alt="Panelizer Workspace Screenshot" width="850"/>
+  ![Demo](public/demo.gif)
+
+<div>
+  See the full video
+  <a href="https://github.com/pelletier197/Panelizer/blob/main/public/demo.webm" target="_blank">here</a>.
+  </div>
 
 </div>
 
@@ -28,6 +35,7 @@ It’s built for **speed and simplicity**, not to replace heavyweight CAD.
 * **Want to sketch a cabinet and walk into the shop with a cut diagram 5 minutes later?** That’s Panelizer.
 
 ---
+
 
 ## ✨ Features
 
