@@ -1,7 +1,7 @@
 import type { Panel } from '../types/panel'
 import type { Material } from './materials'
 import { findMaterial } from './materials'
-import { formatMeasurement, UNIT_SUFFIX, type Unit } from './units'
+import { formatMeasurement, roundToUnitGrid, UNIT_SUFFIX, type Unit } from './units'
 
 /** One line of the parts list: a group of identical parts and how many are needed. */
 export interface PartRow {
@@ -17,16 +17,20 @@ export interface PartRow {
 }
 
 /** Group panels that share the same size and material into countable rows.
- *  Sizes are exactly as drawn — the size you set is the size you cut. Face
- *  dimensions are normalised (longest side first) so a 600x400 and a 400x600
- *  panel are recognised as the same part. */
-export function buildParts(panels: Panel[], materials: Material[]): PartRow[] {
+ *  Face dimensions are normalised (longest side first) so a 600x400 and a
+ *  400x600 panel are recognised as the same part. Sizes are compared at the
+ *  document's display resolution (snapped to the unit grid): if two parts *read*
+ *  as the same 13 1/2", they group — no sub-fraction mismatch keeps look-alike
+ *  parts apart. The row reports those grid-snapped sizes. */
+export function buildParts(panels: Panel[], materials: Material[], unit: Unit, precision: number): PartRow[] {
   const rows = new Map<string, PartRow>()
+  const grid = (mm: number) => roundToUnitGrid(mm, unit, precision)
 
   for (const panel of panels) {
-    const [length, width] = [panel.length, panel.width].sort((a, b) => b - a)
+    const [length, width] = [grid(panel.length), grid(panel.width)].sort((a, b) => b - a)
+    const thickness = grid(panel.thickness)
     const material = findMaterial(materials, panel.materialId)
-    const key = `${length}x${width}x${panel.thickness}@${material.id}`
+    const key = `${length}x${width}x${thickness}@${material.id}`
 
     const row = rows.get(key)
     if (row) {
@@ -37,7 +41,7 @@ export function buildParts(panels: Panel[], materials: Material[]): PartRow[] {
       rows.set(key, {
         length,
         width,
-        thickness: panel.thickness,
+        thickness,
         material: material.name,
         color: material.color,
         quantity: 1,

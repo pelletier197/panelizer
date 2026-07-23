@@ -3,6 +3,7 @@ import { Vector3 } from 'three'
 import { useThree, type ThreeEvent } from '@react-three/fiber'
 import type { Panel } from '../../types/panel'
 import { MM_TO_M, axisField, panelBoxSize } from '../../lib/geometry'
+import { roundToUnitGrid } from '../../lib/units'
 import { resizeAlongAxis } from '../../lib/resize'
 import { SNAP_THRESHOLD_MM, snapResizeFace, type SnapHitTarget } from '../../lib/snapping'
 import { useDesignStore } from '../../store/designStore'
@@ -63,6 +64,8 @@ function FaceHandle({ panel, axis, faceSign }: { panel: Panel; axis: Axis3; face
   const setGestureEditable = useDesignStore((s) => s.setGestureEditable)
   const clearGesture = useDesignStore((s) => s.clearGesture)
   const setSnapHints = useDesignStore((s) => s.setSnapHints)
+  const unit = useDesignStore((s) => s.unit)
+  const precision = useDesignStore((s) => s.precision)
   const panels = useDesignStore((s) => s.panels)
   const others = panels.filter((p) => p.id !== panel.id)
   const invalidate = useThree((s) => s.invalidate)
@@ -132,10 +135,21 @@ function FaceHandle({ panel, axis, faceSign }: { panel: Panel; axis: Axis3; face
   const applyFrom = (startPanel: Panel, deltaMm: number, symmetric: boolean, commit: boolean) => {
     const result = resizeAlongAxis(startPanel, axis, faceSign, deltaMm, symmetric)
     if (!result) return
-    // Exact value — no grid rounding. A face snapped to a neighbour must stay
-    // exactly on it, or the joint opens a hairline gap.
-    const patch = { [result.field]: result.value, position: result.position }
-    ;(commit ? updatePanel : resizePanelLive)(panel.id, patch)
+    if (!commit) {
+      resizePanelLive(panel.id, { [result.field]: result.value, position: result.position })
+      return
+    }
+    // On commit, snap the final SIZE onto the unit grid so the part reads (and
+    // stores) as an exact fraction — what you see is what's cut. Recompute the
+    // centre from the held (opposite) face so snapping the size never drifts the
+    // fixed edge; a symmetric resize keeps the centre and just changes size.
+    const size = roundToUnitGrid(result.value, unit, precision)
+    let position = [...startPanel.position] as [number, number, number]
+    if (!symmetric) {
+      const fixedFace = startPanel.position[axis] - faceSign * (panelBoxSize(startPanel)[axis] / 2)
+      position[axis] = fixedFace + faceSign * (size / 2)
+    }
+    updatePanel(panel.id, { [result.field]: size, position })
   }
 
   // Open the corner readout for this resize: apply/commit/cancel all work from
@@ -177,7 +191,17 @@ function FaceHandle({ panel, axis, faceSign }: { panel: Panel; axis: Axis3; face
     if (!drag.current) return
     e.stopPropagation()
     const fs = faceSnap(e.ray)
-    const deltaMm = fs.delta
+    // Neighbour snap wins; otherwise step the SIZE by the precision grid so a
+    // free resize changes the part's dimension in clean increments (1/4", …).
+    // (Snapping the face position instead would leave the size off-grid whenever
+    // the opposite face is.)
+    let deltaMm = fs.delta
+    if (!fs.snap) {
+      const factor = faceSign * (e.nativeEvent.altKey ? 2 : 1)
+      const startSize = panelBoxSize(drag.current.panel)[axis]
+      const snappedSize = roundToUnitGrid(startSize + fs.delta * factor, unit, precision)
+      deltaMm = (snappedSize - startSize) / factor
+    }
     lastDelta.current = deltaMm
     applyFrom(drag.current.panel, deltaMm, e.nativeEvent.altKey, false)
     if (!gestureOpen.current) {

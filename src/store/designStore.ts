@@ -41,6 +41,8 @@ interface Snapshot {
   materials: Material[]
   stocks: Stock[]
   unit: Unit
+  /** Imperial working precision (fraction denominator, e.g. 16 = 1/16"). */
+  precision: number
   kerf: number
   margin: number
 }
@@ -61,6 +63,9 @@ interface DesignState {
   materials: Material[]
   stocks: Stock[]
   unit: Unit
+  /** Imperial working precision (fraction denominator, e.g. 16 = 1/16"); the
+   *  grid that sizes/positions snap to. Ignored in metric (always 1 mm). */
+  precision: number
   kerf: number
   margin: number
   /** Selected panels. Empty = nothing selected; one id = the classic single
@@ -156,8 +161,15 @@ interface DesignState {
   removeStock: (id: string) => void
 
   setUnit: (unit: Unit) => void
-  /** Heal imperial drift: snap every thickness to an exact unit-grid fraction and
-   *  close hairline gaps at joints so parts add up exactly. One undo step. */
+  /** Set the imperial working precision (fraction denominator). Snaps existing
+   *  geometry to the new, coarser/finer grid too (via fixPrecision). */
+  setPrecision: (precision: number) => void
+  /** Switch the document unit AND convert the geometry onto the new unit's grid
+   *  (snap sizes, close gaps). Lossy across systems (mm↔inch); the UI confirms
+   *  first. One undo step. */
+  convertUnit: (unit: Unit) => void
+  /** Heal drift in the current unit: snap sizes to the exact grid and close
+   *  hairline gaps at joints so parts add up exactly. One undo step. */
   fixPrecision: () => void
   setKerf: (mm: number) => void
   setMargin: (mm: number) => void
@@ -177,6 +189,7 @@ export const useDesignStore = create<DesignState>((set, get) => {
     materials: s.materials,
     stocks: s.stocks,
     unit: s.unit,
+    precision: s.precision,
     kerf: s.kerf,
     margin: s.margin,
   })
@@ -218,6 +231,7 @@ export const useDesignStore = create<DesignState>((set, get) => {
       materials: snap.materials,
       stocks: snap.stocks,
       unit: snap.unit,
+      precision: snap.precision,
       kerf: snap.kerf,
       margin: snap.margin,
       selectedIds: current.selectedIds.filter((id) => ids.has(id)),
@@ -233,6 +247,7 @@ export const useDesignStore = create<DesignState>((set, get) => {
     materials: initial.materials,
     stocks: initial.stocks,
     unit: initial.unit,
+    precision: initial.precision,
     kerf: initial.kerf,
     margin: initial.margin,
     selectedIds: [],
@@ -437,15 +452,26 @@ export const useDesignStore = create<DesignState>((set, get) => {
 
     setUnit: (unit) => commit({ unit }),
 
+    setPrecision: (precision) => {
+      // Re-snap geometry onto the new precision grid so everything stays exact.
+      commit({ precision, panels: repairPrecision(get().panels, get().unit, precision) })
+    },
+
+    convertUnit: (unit) => {
+      // Snap all geometry onto the new unit's grid so values stay exact fractions
+      // in the unit you're now working in, and close any gaps the snap opens.
+      commit({ unit, panels: repairPrecision(get().panels, unit, get().precision) })
+    },
+
     fixPrecision: () => {
-      const { panels, unit } = get()
-      if (panels.length > 0) commit({ panels: repairPrecision(panels, unit) })
+      const { panels, unit, precision } = get()
+      if (panels.length > 0) commit({ panels: repairPrecision(panels, unit, precision) })
     },
     setKerf: (kerf) => commit({ kerf: Math.max(0, kerf) }),
     setMargin: (margin) => commit({ margin: Math.max(0, margin) }),
 
-    loadDesign: ({ panels, materials, stocks, unit, kerf, margin }) =>
-      commit({ panels, materials, stocks, unit, kerf, margin, selectedIds: [] }),
+    loadDesign: ({ panels, materials, stocks, unit, precision, kerf, margin }) =>
+      commit({ panels, materials, stocks, unit, precision, kerf, margin, selectedIds: [] }),
 
     clear: () => commit({ panels: [], stocks: [], selectedIds: [] }),
   }

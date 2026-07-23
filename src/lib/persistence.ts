@@ -3,6 +3,7 @@ import { defaultGrain } from '../types/panel'
 import type { Material } from './materials'
 import type { Stock } from './stock'
 import type { Unit } from './units'
+import { DEFAULT_PRECISION } from './units'
 import { defaultMaterials, findMaterial } from './materials'
 
 const STORAGE_KEY = 'wood3d.autosave'
@@ -20,6 +21,8 @@ export interface Design {
   materials: Material[]
   stocks: Stock[]
   unit: Unit
+  /** Imperial working precision (fraction denominator, e.g. 16 = 1/16"). */
+  precision: number
   /** Saw blade width (mm) left between adjacent parts when nesting. */
   kerf: number
   /** Trim margin (mm) kept clear around the edge of each sheet. */
@@ -33,8 +36,8 @@ export interface DesignFile extends Design {
   version: number
 }
 
-export function serialize({ panels, materials, stocks, unit, kerf, margin }: Design): DesignFile {
-  return { format: FORMAT, version: VERSION, unit, kerf, margin, materials, stocks, panels }
+export function serialize({ panels, materials, stocks, unit, precision, kerf, margin }: Design): DesignFile {
+  return { format: FORMAT, version: VERSION, unit, precision, kerf, margin, materials, stocks, panels }
 }
 
 /** Parse and validate a design file, throwing on anything that isn't ours.
@@ -65,6 +68,7 @@ export function parse(json: string): Design {
     materials,
     stocks: Array.isArray(data.stocks) ? data.stocks : [],
     unit: data.unit ?? 'mm',
+    precision: data.precision ?? DEFAULT_PRECISION,
     kerf: data.kerf ?? DEFAULT_KERF,
     margin: data.margin ?? DEFAULT_MARGIN,
   }
@@ -95,6 +99,7 @@ export function loadFromStorage(): Design {
     materials: defaultMaterials(),
     stocks: [],
     unit: 'mm',
+    precision: DEFAULT_PRECISION,
     kerf: DEFAULT_KERF,
     margin: DEFAULT_MARGIN,
   }

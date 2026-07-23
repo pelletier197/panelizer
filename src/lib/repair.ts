@@ -1,5 +1,5 @@
 import type { Panel } from '../types/panel'
-import type { Unit } from './units'
+import { roundToUnitGrid, type Unit } from './units'
 import { panelBoxSize } from './geometry'
 
 type Vec3 = [number, number, number]
@@ -41,17 +41,19 @@ interface Joint {
  * only ever flows away from the fixed anchor, it converges (no oscillation) and
  * the anchor's corner stays put while the far end pulls in to close every gap.
  */
-export function repairPrecision(panels: Panel[], unit: Unit): Panel[] {
-  // 1) Nudge a thickness onto the exact unit grid ONLY if it's already a hair
-  //    off one (e.g. legacy 19 mm → a true 3/4" = 19.05). A genuine metric
-  //    thickness like 18 mm is NOT a clean inch fraction and must be left alone —
-  //    snapping it to 11/16" would silently shrink the part.
-  const grid = unit === 'inch' ? 25.4 / 16 : 1
-  const snapThickness = (t: number) => {
-    const snapped = Math.round(t / grid) * grid
-    return Math.abs(snapped - t) <= 0.1 ? snapped : t
-  }
-  const fixed = panels.map((p) => ({ ...p, thickness: snapThickness(p.thickness) }))
+export function repairPrecision(panels: Panel[], unit: Unit, precision: number): Panel[] {
+  // 1) Snap every size (length, width, thickness) onto the unit's grid so each
+  //    part reads and stores as an exact fraction — what you see is what's cut,
+  //    and identical parts become byte-identical (so they group). The doc works
+  //    in one unit, so an off-grid metric thickness in an inch doc is genuinely
+  //    being converted to the nearest 1/16", by design.
+  const grid = (v: number) => roundToUnitGrid(v, unit, precision)
+  const fixed = panels.map((p) => ({
+    ...p,
+    length: grid(p.length),
+    width: grid(p.width),
+    thickness: grid(p.thickness),
+  }))
 
   const pos: Vec3[] = fixed.map((p) => [...p.position] as Vec3)
   const half: Vec3[] = fixed.map((p) => {

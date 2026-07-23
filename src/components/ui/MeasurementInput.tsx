@@ -1,57 +1,59 @@
 import { useEffect, useState } from 'react'
-import { evaluateMeasurement, formatMeasurement, UNIT_SUFFIX, type Unit } from '../../lib/units'
+import {
+  evaluateMeasurement,
+  formatMeasurement,
+  roundToUnitGrid,
+  sameSystem,
+  UNIT_SUFFIX,
+  type Unit,
+} from '../../lib/units'
 
 interface MeasurementInputProps {
   label: string
   /** The value in millimetres — geometry is always stored in mm. */
   value: number
-  /** Reports the committed value and the unit it should now be remembered in
-   *  (an explicitly typed unit, else the field's current display unit). */
-  onChange: (mm: number, unit: Unit) => void
-  /** Document default: the display/entry unit for a field the user hasn't pinned. */
-  defaultUnit: Unit
-  /** The unit this field was last entered in, if any. Wins over the document
-   *  default so a value typed in mm keeps showing mm — never an inch fraction. */
-  unit?: Unit
+  onChange: (mm: number) => void
+  /** The single document unit. Bare numbers are read in it; entry in the other
+   *  measuring system is rejected (a mm value can't be typed into an inch doc). */
+  unit: Unit
+  /** Imperial working precision (fraction denominator) the value snaps to. */
+  precision: number
   /** Optional lower bound in mm (dimensions clamp to >= 1; positions don't). */
   min?: number
+  /** Snap the committed value onto the working grid so what's shown is exactly
+   *  what's stored. On for sizes and typed positions. */
+  snap?: boolean
 }
 
 /**
- * A text field for a length that understands units. Type a bare number (read in
- * this field's own unit) or an explicit one like `24.5 in`, `3/4"`, `18mm`.
- *
- * The unit is *sticky per field*: whatever unit you last entered is remembered
- * (persisted on the panel), so a thickness typed in mm always displays in mm and
- * never gets shown — or written back — as an inch approximation. Fields you've
- * never touched follow the document default.
+ * Text field for a length in the document's unit. Type a decimal or, in inch,
+ * fractions/mixed numbers (`3/4`, `13 1/2`). The document works in ONE unit —
+ * entry in the other system is refused, so a value never silently converts to a
+ * lossy fraction. Size fields snap to the unit grid on commit (What You See Is
+ * What's Stored); only an edited field writes back.
  */
-export function MeasurementInput({ label, value, onChange, defaultUnit, unit, min }: MeasurementInputProps) {
-  // The field's own unit wins; the document default only fills in when unset.
-  const displayUnit = unit ?? defaultUnit
-  const [text, setText] = useState(() => formatMeasurement(value, displayUnit))
+export function MeasurementInput({ label, value, onChange, unit, precision, min, snap = false }: MeasurementInputProps) {
+  const [text, setText] = useState(() => formatMeasurement(value, unit))
   const [focused, setFocused] = useState(false)
-  // Only an edited field writes back. The shown text can be a lossy fraction
-  // (18 mm → 11/16"), so committing an untouched field would corrupt the value.
+  // Only an edited field writes back — the shown text can be a rounded display,
+  // so committing an untouched field could shift the stored value.
   const [dirty, setDirty] = useState(false)
 
-  // Reflect external changes (gizmo drag, unit switch, import) unless mid-edit.
   useEffect(() => {
-    if (!focused) setText(formatMeasurement(value, displayUnit))
-  }, [value, displayUnit, focused])
+    if (!focused) setText(formatMeasurement(value, unit))
+  }, [value, unit, focused])
 
   const commit = () => {
-    // Bare numbers are read in this field's unit; an explicit suffix overrides
-    // both the value's unit and what the field is remembered in.
-    const result = evaluateMeasurement(text, value, displayUnit)
-    if (result === null) {
-      setText(formatMeasurement(value, displayUnit)) // reject: restore last good value
+    const result = evaluateMeasurement(text, value, unit)
+    // Reject unparseable input, or a unit from the other measuring system.
+    if (result === null || (result.explicitUnit && !sameSystem(result.explicitUnit, unit))) {
+      setText(formatMeasurement(value, unit))
       return
     }
-    const resolved = result.explicitUnit ?? displayUnit
-    const mm = min === undefined ? result.mm : Math.max(min, result.mm)
-    onChange(mm, resolved)
-    setText(formatMeasurement(mm, resolved))
+    let mm = min === undefined ? result.mm : Math.max(min, result.mm)
+    if (snap) mm = roundToUnitGrid(mm, unit, precision)
+    onChange(mm)
+    setText(formatMeasurement(mm, unit))
   }
 
   return (
@@ -70,14 +72,14 @@ export function MeasurementInput({ label, value, onChange, defaultUnit, unit, mi
           onBlur={() => {
             setFocused(false)
             if (dirty) commit()
-            else setText(formatMeasurement(value, displayUnit)) // untouched: restore canonical display, no write-back
+            else setText(formatMeasurement(value, unit))
             setDirty(false)
           }}
           onKeyDown={(e) => {
             if (e.key === 'Enter') e.currentTarget.blur()
           }}
         />
-        <span className="field__suffix">{UNIT_SUFFIX[displayUnit]}</span>
+        <span className="field__suffix">{UNIT_SUFFIX[unit]}</span>
       </span>
     </label>
   )

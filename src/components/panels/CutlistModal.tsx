@@ -51,6 +51,7 @@ export function CutlistModal() {
   const materials = useDesignStore((s) => s.materials)
   const stocks = useDesignStore((s) => s.stocks)
   const unit = useDesignStore((s) => s.unit)
+  const precision = useDesignStore((s) => s.precision)
   const kerf = useDesignStore((s) => s.kerf)
   const margin = useDesignStore((s) => s.margin)
   const setKerf = useDesignStore((s) => s.setKerf)
@@ -66,7 +67,7 @@ export function CutlistModal() {
     () => generateCutlist(panels.filter((p) => !p.excludeFromCutlist), materials, stocks, kerf, margin),
     [panels, materials, stocks, kerf, margin],
   )
-  const parts = useMemo(() => buildParts(panels, materials), [panels, materials])
+  const parts = useMemo(() => buildParts(panels, materials, unit, precision), [panels, materials, unit, precision])
   const grainOf = (ids: string[]) => panels.find((p) => p.id === ids[0])?.grain ?? 'length'
   const cycleGrain = (ids: string[]) => {
     const next = nextGrain(grainOf(ids))
@@ -203,8 +204,8 @@ export function CutlistModal() {
           <aside className="cutlist-view__controls" ref={asideRef} style={{ width: controlsWidth }}>
             <div className="field-group">
               <h3>Settings</h3>
-              <MeasurementInput label="Kerf" value={kerf} defaultUnit={unit} min={0} onChange={setKerf} />
-              <MeasurementInput label="Margin" value={margin} defaultUnit={unit} min={0} onChange={setMargin} />
+              <MeasurementInput label="Kerf" value={kerf} unit={unit} precision={precision} min={0} snap onChange={setKerf} />
+              <MeasurementInput label="Margin" value={margin} unit={unit} precision={precision} min={0} snap onChange={setMargin} />
             </div>
 
             <div className="field-group">
@@ -229,7 +230,7 @@ export function CutlistModal() {
                       </select>
                     </div>
                     <div className="stock__grid">
-                      <MeasurementInput label="Thickness" value={s.thickness} defaultUnit={unit} min={1} onChange={(v) => updateStock(s.id, { thickness: v })} />
+                      <MeasurementInput label="Thickness" value={s.thickness} unit={unit} precision={precision} min={1} snap onChange={(v) => updateStock(s.id, { thickness: v })} />
                       <label className="field">
                         <span className="field__label">Quantity</span>
                         <span className="field__control">
@@ -245,8 +246,8 @@ export function CutlistModal() {
                           />
                         </span>
                       </label>
-                      <MeasurementInput label="Length" value={s.length} defaultUnit={unit} min={1} onChange={(v) => updateStock(s.id, { length: v })} />
-                      <MeasurementInput label="Width" value={s.width} defaultUnit={unit} min={1} onChange={(v) => updateStock(s.id, { width: v })} />
+                      <MeasurementInput label="Length" value={s.length} unit={unit} precision={precision} min={1} snap onChange={(v) => updateStock(s.id, { length: v })} />
+                      <MeasurementInput label="Width" value={s.width} unit={unit} precision={precision} min={1} snap onChange={(v) => updateStock(s.id, { width: v })} />
                     </div>
                     <div className="stock__actions">
                       <button className="material__remove" aria-label="Remove stock" onClick={() => removeStock(s.id)}>

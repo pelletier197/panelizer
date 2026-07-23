@@ -4,6 +4,7 @@ import { Edges, TransformControls } from '@react-three/drei'
 import type { Panel } from '../../types/panel'
 import { MM_TO_M, panelBoxSize } from '../../lib/geometry'
 import { findMaterial } from '../../lib/materials'
+import { roundToUnitGrid } from '../../lib/units'
 import { SNAP_THRESHOLD_MM, snapGroupDelta } from '../../lib/snapping'
 import { useDesignStore } from '../../store/designStore'
 import { ResizeHandles } from './ResizeHandles'
@@ -49,6 +50,8 @@ export function PanelMesh({ panel }: { panel: Panel }) {
   const setSnapHints = useDesignStore((s) => s.setSnapHints)
   const panels = useDesignStore((s) => s.panels)
   const tool = useDesignStore((s) => s.tool)
+  const unit = useDesignStore((s) => s.unit)
+  const precision = useDesignStore((s) => s.precision)
   const color = useDesignStore((s) => findMaterial(s.materials, panel.materialId).color)
 
   const hidden = panel.hidden === true
@@ -150,7 +153,13 @@ export function PanelMesh({ panel }: { panel: Panel }) {
     // that merely happens to sit within threshold would snap "out of nowhere".
     const applies = (a: 0 | 1 | 2) =>
       active === a || (active === null && Math.abs(raw[a]) > MOVE_THRESHOLD_MM)
-    const delta: Vec3 = [0, 1, 2].map((a) => raw[a] + (applies(a as 0 | 1 | 2) ? corr[a] : 0)) as Vec3
+    // On each moving axis: land on a neighbour if one is in range, otherwise step
+    // the panel by the precision grid so a free move lands on clean increments.
+    const delta: Vec3 = ([0, 1, 2] as const).map((a) => {
+      if (!applies(a)) return raw[a]
+      if (snaps[a]) return raw[a] + corr[a]
+      return roundToUnitGrid(primaryStart[a] + raw[a], unit, precision) - primaryStart[a]
+    }) as Vec3
 
     obj.position.set(
       (primaryStart[0] + delta[0]) * MM_TO_M,

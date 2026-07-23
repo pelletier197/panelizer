@@ -43,11 +43,16 @@ function Corner({
     if (ref.current) ref.current.scale.setScalar(camera.position.distanceTo(pos) / NOMINAL_DIST)
   })
 
-  // Ignore the click if a (non-hidden) panel is nearer along the ray than this
-  // corner — hidden panels raycast off, so corners behind them stay pickable.
+  // Ignore the click only if a panel genuinely covers this corner: it must be
+  // nearer along the ray AND be hit well away from the corner point (i.e. on its
+  // broad face). Panels that merely *meet* at this corner are hit right at it —
+  // they mustn't block the pick, which is what made shared corners unclickable.
+  // Hidden panels raycast off, so corners behind them stay pickable.
   const occluded = (e: ThreeEvent<MouseEvent>) => {
     const cornerDist = e.ray.origin.distanceTo(pos)
-    return e.intersections.some((i) => i.object.userData?.isPanel && i.distance < cornerDist - 0.002)
+    return e.intersections.some(
+      (i) => i.object.userData?.isPanel && i.distance < cornerDist - 0.002 && i.point.distanceTo(pos) > 0.03,
+    )
   }
 
   return (

@@ -22,7 +22,8 @@ export function PartsPanel() {
   const selectedIds = useDesignStore((s) => s.selectedIds)
   const select = useDesignStore((s) => s.select)
   const setHidden = useDesignStore((s) => s.setHidden)
-  const rows = useMemo(() => buildParts(panels, materials), [panels, materials])
+  const precision = useDesignStore((s) => s.precision)
+  const rows = useMemo(() => buildParts(panels, materials, unit, precision), [panels, materials, unit, precision])
   const byId = useMemo(() => new Map(panels.map((p) => [p.id, p])), [panels])
 
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
