@@ -3,7 +3,7 @@ import type { Panel } from '../../types/panel'
 import { useDesignStore, type Tool } from '../../store/designStore'
 import { downloadDesign, parse } from '../../lib/persistence'
 import { defaultThinThickness } from '../../lib/panel'
-import { DOCUMENT_UNITS } from '../../lib/units'
+import { DOCUMENT_UNITS, IMPERIAL_PRECISIONS, sameSystem, type Unit } from '../../lib/units'
 import { Menu } from '../ui/Menu'
 import { ToolHint } from '../layout/ToolHint'
 
@@ -40,14 +40,39 @@ export function Toolbar() {
   const kerf = useDesignStore((s) => s.kerf)
   const margin = useDesignStore((s) => s.margin)
   const setUnit = useDesignStore((s) => s.setUnit)
+  const convertUnit = useDesignStore((s) => s.convertUnit)
+  const precision = useDesignStore((s) => s.precision)
+  const setPrecision = useDesignStore((s) => s.setPrecision)
   const setCutlistOpen = useDesignStore((s) => s.setCutlistOpen)
   const tool = useDesignStore((s) => s.tool)
   const setTool = useDesignStore((s) => s.setTool)
   const addPanel = useDesignStore((s) => s.addPanel)
   const loadDesign = useDesignStore((s) => s.loadDesign)
+  const fixPrecision = useDesignStore((s) => s.fixPrecision)
   const clear = useDesignStore((s) => s.clear)
   const fileInput = useRef<HTMLInputElement>(null)
   const empty = panels.length === 0
+
+  // Changing the document unit converts the geometry onto the new unit's grid.
+  // Crossing measuring systems (mm↔inch) is lossy — every size snaps to the
+  // nearest 1/16" and small gaps close — so confirm first.
+  const changeUnit = (next: Unit) => {
+    if (next === unit) return
+    if (empty) {
+      setUnit(next)
+      return
+    }
+    if (
+      !sameSystem(next, unit) &&
+      !confirm(
+        `Switch to ${next === 'inch' ? 'inches' : next}? Every size snaps to the nearest ` +
+          `${next === 'inch' ? '1/16"' : 'mm'} and small joint gaps are closed. This is lossy and can't be undone cleanly.`,
+      )
+    ) {
+      return
+    }
+    convertUnit(next)
+  }
 
   const handleImport = async (file: File) => {
     try {
@@ -147,7 +172,7 @@ export function Toolbar() {
                 <button
                   key={value}
                   className={unit === value ? 'is-active' : ''}
-                  onClick={() => setUnit(value)}
+                  onClick={() => changeUnit(value)}
                 >
                   {label}
                 </button>
@@ -160,7 +185,7 @@ export function Toolbar() {
               className="menu__item"
               disabled={empty}
               onClick={() => {
-                downloadDesign({ panels, materials, stocks, unit, kerf, margin })
+                downloadDesign({ panels, materials, stocks, unit, precision, kerf, margin })
                 close()
               }}
             >
@@ -174,6 +199,36 @@ export function Toolbar() {
               }}
             >
               Import…
+            </button>
+
+            {unit === 'inch' && (
+              <>
+                <div className="menu__label">Precision</div>
+                <div className="menu__units">
+                  {IMPERIAL_PRECISIONS.map((p) => (
+                    <button
+                      key={p}
+                      className={precision === p ? 'is-active' : ''}
+                      onClick={() => setPrecision(p)}
+                    >
+                      1/{p}
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
+
+            <div className="menu__divider" />
+
+            <button
+              className="menu__item"
+              disabled={empty}
+              onClick={() => {
+                fixPrecision()
+                close()
+              }}
+            >
+              Fix precision
             </button>
 
             <div className="menu__divider" />

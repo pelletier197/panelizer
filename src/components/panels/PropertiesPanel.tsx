@@ -19,6 +19,7 @@ export function PropertiesPanel() {
   )
   const materials = useDesignStore((s) => s.materials)
   const unit = useDesignStore((s) => s.unit)
+  const precision = useDesignStore((s) => s.precision)
   const updatePanel = useDesignStore((s) => s.updatePanel)
   const setPanelMaterial = useDesignStore((s) => s.setPanelMaterial)
   const removePanel = useDesignStore((s) => s.removePanel)
@@ -111,16 +112,16 @@ export function PropertiesPanel() {
 
       <div className="field-group">
         <h3>Face</h3>
-        <MeasurementInput label="Length" value={panel.length} defaultUnit={unit} min={1} onChange={(v) => updatePanel(panel.id, { length: v })} />
-        <MeasurementInput label="Width" value={panel.width} defaultUnit={unit} min={1} onChange={(v) => updatePanel(panel.id, { width: v })} />
-        <MeasurementInput label="Thickness" value={panel.thickness} defaultUnit={unit} min={1} onChange={(v) => updatePanel(panel.id, { thickness: v })} />
+        <MeasurementInput label="Length" value={panel.length} unit={unit} precision={precision} min={1} snap onChange={(v) => updatePanel(panel.id, { length: v })} />
+        <MeasurementInput label="Width" value={panel.width} unit={unit} precision={precision} min={1} snap onChange={(v) => updatePanel(panel.id, { width: v })} />
+        <MeasurementInput label="Thickness" value={panel.thickness} unit={unit} precision={precision} min={1} snap onChange={(v) => updatePanel(panel.id, { thickness: v })} />
       </div>
 
       <div className="field-group">
         <h3>Position (centre)</h3>
-        <MeasurementInput label="X" value={panel.position[0]} defaultUnit={unit} onChange={(v) => setPosition(0, v)} />
-        <MeasurementInput label="Y" value={panel.position[1]} defaultUnit={unit} onChange={(v) => setPosition(1, v)} />
-        <MeasurementInput label="Z" value={panel.position[2]} defaultUnit={unit} onChange={(v) => setPosition(2, v)} />
+        <MeasurementInput label="X" value={panel.position[0]} unit={unit} precision={precision} snap onChange={(v) => setPosition(0, v)} />
+        <MeasurementInput label="Y" value={panel.position[1]} unit={unit} precision={precision} snap onChange={(v) => setPosition(1, v)} />
+        <MeasurementInput label="Z" value={panel.position[2]} unit={unit} precision={precision} snap onChange={(v) => setPosition(2, v)} />
       </div>
     </section>
   )

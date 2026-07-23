@@ -38,6 +38,32 @@ export function toMm(value: number, unit: Unit): number {
   return value * MM_PER_UNIT[unit]
 }
 
+/** Selectable imperial working precisions — the fraction denominator a document
+ *  snaps to (1/4 … 1/64). Metric always works to 1 mm. */
+export const IMPERIAL_PRECISIONS = [4, 8, 16, 32, 64] as const
+export const DEFAULT_PRECISION = 16
+
+/** The grid step (mm) a document snaps to: 1"/`precision` in imperial (e.g.
+ *  1/16"), 1 mm in metric (`precision` is ignored). */
+export function gridStepMm(unit: Unit, precision: number): number {
+  return unit === 'inch' ? 25.4 / precision : 1
+}
+
+/** Snap a millimetre value onto the document grid, so what you see is exactly
+ *  what's stored (a part shown as 13 1/2" is stored as exactly 13 1/2", and
+ *  identical parts are byte-identical, so they group). */
+export function roundToUnitGrid(mm: number, unit: Unit, precision: number): number {
+  const step = gridStepMm(unit, precision)
+  return Math.round(mm / step) * step
+}
+
+/** Whether two units are the same measuring system (metric vs imperial), used to
+ *  reject cross-system entry in a single-unit document. */
+export function sameSystem(a: Unit, b: Unit): boolean {
+  const imperial = (u: Unit) => u === 'inch'
+  return imperial(a) === imperial(b)
+}
+
 /** Whether the document unit is imperial (inches), so defaults should be clean
  *  imperial sizes rather than clean metric ones. */
 export function isImperial(unit: Unit): boolean {
@@ -54,7 +80,7 @@ export function fromMm(mm: number, unit: Unit): number {
  * (`3/4`) and an optional trailing unit; a bare number uses `defaultUnit`.
  */
 export function parseMeasurement(raw: string, defaultUnit: Unit): number | null {
-  const text = raw.trim().toLowerCase()
+  const text = normalizeFractions(raw).trim().toLowerCase()
   if (!text) return null
 
   const match = text.match(/^([0-9./\s-]+?)\s*([a-z"']*)$/)
@@ -91,7 +117,7 @@ export interface EvalResult {
  * not a full expression engine. Returns `null` if anything fails to parse.
  */
 export function evaluateMeasurement(raw: string, currentMm: number, defaultUnit: Unit): EvalResult | null {
-  const text = raw.trim()
+  const text = normalizeFractions(raw).trim()
   if (!text) return null
 
   const isOp = (t: string) => t === '+' || t === '-' || t === '*' || t === '/'
@@ -188,7 +214,9 @@ function parseNumeric(part: string): number | null {
 }
 
 /** Format a millimetre value for display in the given unit. Inches render as
- *  shop-friendly fractions to the nearest 1/16"; metric renders as decimals. */
+ *  shop-friendly fractions to the nearest 1/64" (fine enough that a value on any
+ *  supported precision grid — 1/4 … 1/64 — shows as its exact reduced fraction);
+ *  metric renders as decimals. */
 export function formatMeasurement(mm: number, unit: Unit): string {
   const value = fromMm(mm, unit)
   if (unit === 'inch') return formatInches(value)
@@ -196,22 +224,55 @@ export function formatMeasurement(mm: number, unit: Unit): string {
   return trimZeros(value.toFixed(decimals))
 }
 
+// Superscript / subscript digit glyphs, used to render inch fractions compactly
+// (e.g. `22¹³⁄₁₆`) so the parts table and readouts don't sprawl. `⁄` is the
+// Unicode fraction slash (U+2044). `normalizeFractions` reverses all of this so
+// a displayed value can still be typed back into a field.
+const SUP = ['⁰', '¹', '²', '³', '⁴', '⁵', '⁶', '⁷', '⁸', '⁹']
+const SUB = ['₀', '₁', '₂', '₃', '₄', '₅', '₆', '₇', '₈', '₉']
+const glyphs = (n: number, table: string[]) =>
+  String(n)
+    .split('')
+    .map((d) => table[Number(d)])
+    .join('')
+
 function formatInches(value: number): string {
   const sign = value < 0 ? '-' : ''
   const abs = Math.abs(value)
   const whole = Math.floor(abs)
 
-  let numerator = Math.round((abs - whole) * 16)
-  let denominator = 16
-  if (numerator === 16) return `${sign}${whole + 1}`
+  let numerator = Math.round((abs - whole) * 64)
+  let denominator = 64
+  if (numerator === 64) return `${sign}${whole + 1}`
   if (numerator === 0) return `${sign}${whole}`
 
   while (numerator % 2 === 0 && denominator % 2 === 0) {
     numerator /= 2
     denominator /= 2
   }
-  const fraction = `${numerator}/${denominator}`
-  return whole > 0 ? `${sign}${whole} ${fraction}` : `${sign}${fraction}`
+  // Compact mixed number: no space between whole and fraction, fraction drawn
+  // small (`23³⁄₄`). A bare fraction (whole 0) drops the leading `0`.
+  const fraction = `${glyphs(numerator, SUP)}⁄${glyphs(denominator, SUB)}`
+  return whole > 0 ? `${sign}${whole}${fraction}` : `${sign}${fraction}`
+}
+
+/** Reverse of the compact inch glyphs, so a displayed value (`23³⁄₄`) still
+ *  parses when typed back into a field. Superscript digits become the fraction
+ *  numerator — split from the whole number with a space so `23³⁄₄` reads as the
+ *  mixed number `23 3/4`, but only when a whole number actually precedes them
+ *  (a bare fraction or a negative sign must stay glued to the numerator). */
+function normalizeFractions(text: string): string {
+  const sub = (c: string) => String(SUB.indexOf(c))
+  return text
+    .replace(/[₀₁₂₃₄₅₆₇₈₉]/g, sub)
+    .replace(/⁄/g, '/')
+    .replace(/([0-9])?([⁰¹²³⁴⁵⁶⁷⁸⁹]+)/g, (_, pre: string | undefined, run: string) => {
+      const digits = run
+        .split('')
+        .map((c) => String(SUP.indexOf(c)))
+        .join('')
+      return pre !== undefined ? `${pre} ${digits}` : digits
+    })
 }
 
 /** Map an explicitly-typed unit suffix to the display unit a field should

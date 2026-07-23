@@ -3,8 +3,9 @@ import { Vector3 } from 'three'
 import { useThree, type ThreeEvent } from '@react-three/fiber'
 import type { Panel } from '../../types/panel'
 import { MM_TO_M, axisField, panelBoxSize } from '../../lib/geometry'
+import { roundToUnitGrid } from '../../lib/units'
 import { resizeAlongAxis } from '../../lib/resize'
-import { SNAP_THRESHOLD_MM, snapResizeFace } from '../../lib/snapping'
+import { SNAP_THRESHOLD_MM, snapResizeFace, type SnapHitTarget } from '../../lib/snapping'
 import { useDesignStore } from '../../store/designStore'
 
 type Axis3 = 0 | 1 | 2
@@ -62,6 +63,9 @@ function FaceHandle({ panel, axis, faceSign }: { panel: Panel; axis: Axis3; face
   const setGestureDelta = useDesignStore((s) => s.setGestureDelta)
   const setGestureEditable = useDesignStore((s) => s.setGestureEditable)
   const clearGesture = useDesignStore((s) => s.clearGesture)
+  const setSnapHints = useDesignStore((s) => s.setSnapHints)
+  const unit = useDesignStore((s) => s.unit)
+  const precision = useDesignStore((s) => s.precision)
   const panels = useDesignStore((s) => s.panels)
   const others = panels.filter((p) => p.id !== panel.id)
   const invalidate = useThree((s) => s.invalidate)
@@ -72,8 +76,14 @@ function FaceHandle({ panel, axis, faceSign }: { panel: Panel; axis: Axis3; face
   const [hovered, setHovered] = useState(false)
 
   // Safety net: if this handle unmounts mid-gesture (tool switch, deselect),
-  // make sure orbit is turned back on.
-  useEffect(() => () => setOrbit(true), [setOrbit])
+  // make sure orbit is turned back on and no snap guide is left hanging.
+  useEffect(
+    () => () => {
+      setOrbit(true)
+      setSnapHints([])
+    },
+    [setOrbit, setSnapHints],
+  )
 
   const faceCenter = faceCenterMm(panel, axis, faceSign)
   const handleCenter: [number, number, number] = [...faceCenter]
@@ -95,12 +105,28 @@ function FaceHandle({ panel, axis, faceSign }: { panel: Panel; axis: Axis3; face
     return (b * ray.direction.dot(w0) - u.dot(w0)) / denom
   }
 
-  // Raw pointer displacement (mm) since pointer-down, then magnetically
-  // snapped so the moving face clicks onto a nearby neighbour edge.
-  const displacementMm = (ray: ThreeEvent<PointerEvent>['ray']): number => {
-    if (!drag.current) return 0
+  // Raw pointer displacement (mm) since pointer-down, then magnetically snapped
+  // so the moving face clicks onto a nearby neighbour edge or centre line.
+  const faceSnap = (ray: ThreeEvent<PointerEvent>['ray']) => {
+    if (!drag.current) return { delta: 0, snap: null }
     const raw = (axisParam(ray, drag.current.p0) - drag.current.param0) / MM_TO_M
     return snapResizeFace(drag.current.panel, axis, faceSign, raw, others, SNAP_THRESHOLD_MM)
+  }
+
+  // Show (or clear) the snap guide, drawn on the contact rectangle (the overlap
+  // of the two panels) so it marks only where the faces meet.
+  const showSnap = (snap: SnapHitTarget | null) => {
+    if (!snap) return setSnapHints([])
+    const at: [number, number, number] = [0, 0, 0]
+    const size: [number, number, number] = [0, 0, 0]
+    for (const k of [0, 1, 2] as const) {
+      if (k === axis) at[k] = snap.plane
+      else {
+        at[k] = (snap.lo[k] + snap.hi[k]) / 2
+        size[k] = Math.max(0, snap.hi[k] - snap.lo[k])
+      }
+    }
+    setSnapHints([{ axis, kind: snap.kind, at, size }])
   }
 
   const label = axisField(panel.normal, axis) === 'length' ? 'Length' : 'Width'
@@ -109,10 +135,21 @@ function FaceHandle({ panel, axis, faceSign }: { panel: Panel; axis: Axis3; face
   const applyFrom = (startPanel: Panel, deltaMm: number, symmetric: boolean, commit: boolean) => {
     const result = resizeAlongAxis(startPanel, axis, faceSign, deltaMm, symmetric)
     if (!result) return
-    const patch = commit
-      ? { [result.field]: Math.round(result.value), position: result.position.map(Math.round) as [number, number, number] }
-      : { [result.field]: result.value, position: result.position }
-    ;(commit ? updatePanel : resizePanelLive)(panel.id, patch)
+    if (!commit) {
+      resizePanelLive(panel.id, { [result.field]: result.value, position: result.position })
+      return
+    }
+    // On commit, snap the final SIZE onto the unit grid so the part reads (and
+    // stores) as an exact fraction — what you see is what's cut. Recompute the
+    // centre from the held (opposite) face so snapping the size never drifts the
+    // fixed edge; a symmetric resize keeps the centre and just changes size.
+    const size = roundToUnitGrid(result.value, unit, precision)
+    let position = [...startPanel.position] as [number, number, number]
+    if (!symmetric) {
+      const fixedFace = startPanel.position[axis] - faceSign * (panelBoxSize(startPanel)[axis] / 2)
+      position[axis] = fixedFace + faceSign * (size / 2)
+    }
+    updatePanel(panel.id, { [result.field]: size, position })
   }
 
   // Open the corner readout for this resize: apply/commit/cancel all work from
@@ -153,7 +190,18 @@ function FaceHandle({ panel, axis, faceSign }: { panel: Panel; axis: Axis3; face
   const onPointerMove = (e: ThreeEvent<PointerEvent>) => {
     if (!drag.current) return
     e.stopPropagation()
-    const deltaMm = displacementMm(e.ray)
+    const fs = faceSnap(e.ray)
+    // Neighbour snap wins; otherwise step the SIZE by the precision grid so a
+    // free resize changes the part's dimension in clean increments (1/4", …).
+    // (Snapping the face position instead would leave the size off-grid whenever
+    // the opposite face is.)
+    let deltaMm = fs.delta
+    if (!fs.snap) {
+      const factor = faceSign * (e.nativeEvent.altKey ? 2 : 1)
+      const startSize = panelBoxSize(drag.current.panel)[axis]
+      const snappedSize = roundToUnitGrid(startSize + fs.delta * factor, unit, precision)
+      deltaMm = (snappedSize - startSize) / factor
+    }
     lastDelta.current = deltaMm
     applyFrom(drag.current.panel, deltaMm, e.nativeEvent.altKey, false)
     if (!gestureOpen.current) {
@@ -161,6 +209,7 @@ function FaceHandle({ panel, axis, faceSign }: { panel: Panel; axis: Axis3; face
       gestureOpen.current = true
     }
     setGestureDelta(deltaMm)
+    showSnap(fs.snap)
     invalidate()
   }
 
@@ -170,9 +219,10 @@ function FaceHandle({ panel, axis, faceSign }: { panel: Panel; axis: Axis3; face
     if (!drag.current) return
     e.stopPropagation()
     ;(e.target as Element).releasePointerCapture(e.pointerId)
-    const deltaMm = displacementMm(e.ray)
+    const deltaMm = faceSnap(e.ray).delta
     drag.current = null
     setOrbit(true)
+    setSnapHints([]) // the guide belongs to the live drag only
     if (Math.abs(deltaMm) >= CLICK_THRESHOLD_MM) {
       armSelectSuppression() // don't let the drag-release click select a panel
       setGestureEditable() // keep the readout open, now typeable
