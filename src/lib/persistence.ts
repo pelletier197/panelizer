@@ -40,15 +40,16 @@ export function serialize({ panels, materials, stocks, unit, precision, kerf, ma
   return { format: FORMAT, version: VERSION, unit, precision, kerf, margin, materials, stocks, panels }
 }
 
-/** Parse and validate a design file, throwing on anything that isn't ours.
- *  Older files without a materials list get the default material, and any
- *  panel pointing at a missing material falls back to a valid one. Fields added
- *  later (grain, stocks, kerf, margin) are back-filled with sensible defaults,
- *  so files from before those features still load. Panel thickness is preserved
- *  as-is (it's a panel property, not the material's). */
+/** Parse a design file by its shape, not a format tag: as long as it has a
+ *  panels array we try to load it (so files from any past version / name import
+ *  fine). Missing materials fall back to the default; a panel pointing at a
+ *  missing material is remapped to a valid one; later-added fields (grain,
+ *  stocks, precision, kerf, margin) are back-filled. Panel thickness is
+ *  preserved as-is (it's a panel property, not the material's). Throws only when
+ *  the JSON is unreadable or has no panels array. */
 export function parse(json: string): Design {
   const data = JSON.parse(json) as Partial<DesignFile>
-  if (data.format !== FORMAT || !Array.isArray(data.panels)) {
+  if (!Array.isArray(data.panels)) {
     throw new Error('This file is not a valid Panelizer design.')
   }
 
